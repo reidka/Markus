@@ -2,7 +2,6 @@ require 'zip'
 
 class SubmissionsController < ApplicationController
   include SubmissionsHelper
-  include PaginationHelper
 
   helper_method :all_assignments_marked?
 
@@ -35,6 +34,7 @@ class SubmissionsController < ApplicationController
                        :update_files,
                        :populate_file_manager_react]
   before_filter :authorize_for_user, only: [:download, :downloads]
+  layout 'assignment_content', only: [:browse]
 
   def repo_browser
     @assignment = Assignment.find(params[:assignment_id])
@@ -265,6 +265,16 @@ class SubmissionsController < ApplicationController
     else
       @grace_credit_column = ''
     end
+
+    if @assignment.past_collection_date?
+      notice_text = t('browse_submissions.grading_can_begin')
+    else
+      collection_time = @assignment.submission_rule.calculate_collection_time
+      notice_text = t('browse_submissions.grading_can_begin_after',
+                      time: I18n.l(collection_time, format: :long_date))
+    end
+
+    flash_now(:notice, notice_text)
   end
 
   def populate_submissions_table
@@ -308,11 +318,14 @@ class SubmissionsController < ApplicationController
     end
     unless params[:new_files].nil?
       params[:new_files].each do |f|
-        if f.size > 5000000
+        if f.size > MarkusConfigurator.markus_config_max_file_size
           @file_manager_errors[:size_conflict] =
             "Error occured while uploading file \"" +
              f.original_filename +
-             "\": The size of the uploaded file exceeds the maximum of 5MB."
+             '": The size of the uploaded file exceeds the maximum of ' +
+             "#{(MarkusConfigurator.markus_config_max_file_size/ 1000000.00)
+	          .round(2)}" +
+             'MB.'
           render :file_manager
           return
         end

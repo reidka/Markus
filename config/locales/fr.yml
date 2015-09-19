@@ -388,17 +388,6 @@ fr:
         malformed_csv: "Le fichier sélectionné a été mal formé. Se il vous plaît vérifier que le fichier est conforme aux spécifications Markus."
         non_text_file_with_csv_extension: "Le fichier sélectionné ne est pas un fichier csv (même si elle peut avoir une extension .csv)."
 
-    pagination:
-      first: "≪ Première"
-      prev: "< Précédente"
-      next: "Suivante >"
-      last: "Dernière ≫"
-      per_page: "par page"
-      jump_to: "Aller à la page : "
-      show: "Afficher"
-      of:   "%{low} – %{high} sur %{total}"
-      select: "Sélectionner : "
-
     selects:
       all_on_page: "Les %{page_items} éléments de cette page sont séléctionnés."
       all: "Tous les éléments (%{total_items} au total) ont été sélectionnés."
@@ -536,6 +525,7 @@ fr:
                              <code>\"\",q1_name,q2_name,q3_name</code><br>
                              <code>\"\",q1_out_of,q2_out_of,q3_out_of</code><br>
                              <code>user_name,grade_for_q1,grade_for_q2,grade_for_q3</code>"
+      is_hidden: "Masquer Spreadsheet"
 
     no_grade_entry_forms_message: "Il n'y a pas de feuille de notes pour le moment."
     current_grade_entry_forms_title: "Feuilles de notes existantes"
