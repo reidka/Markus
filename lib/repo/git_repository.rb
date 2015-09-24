@@ -1101,7 +1101,6 @@ module Repository
       result = files.keep_if do |file_name, file|
         file.last_modified_date == @timestamp
       end
-      return files_at_path_helper(path, true)
     end
 
     def last_modified_date()
@@ -1109,34 +1108,6 @@ module Repository
     end
 
     private
-
-    def files_at_path_helper(path = '/', only_changed = false)
-      if path.nil?
-        path = '/'
-      end
-      result = Hash.new(nil)
-      raw_contents = self.__get_files(path, @revision_number)
-      raw_contents.each do |file_name, type|
-        if type == :file
-          last_modified_date = @repo.__get_node_last_modified_date(File.join(path, file_name), @revision_number)
-          last_modified_revision = @repo.__get_history(File.join(path, file_name), nil, @revision_number).last
-
-          if(!only_changed || (last_modified_revision == @revision_number))
-            new_file = Repository::RevisionFile.new(@revision_number, {
-                                                      :name => file_name,
-                                                      :path => path,
-                                                      :last_modified_revision => last_modified_revision,
-                                                      :changed => (last_modified_revision == @revision_number),
-                                                      :user_id => @repo.__get_property(:author, last_modified_revision),
-                                                      :mime_type => @repo.__get_file_property(:mime_type, File.join(path, file_name), last_modified_revision),
-                                                      :last_modified_date => last_modified_date
-                                                    })
-            result[file_name] = new_file
-          end
-        end
-      end
-      return result
-    end
 
     # Returns the last modified date and author in an array given
     # the relative path to file as a string
