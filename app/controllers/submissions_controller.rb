@@ -74,7 +74,7 @@ class SubmissionsController < ApplicationController
     #                         date: revision.timestamp}
     rev_number = repo.get_latest_revision.revision_number + 1
     assign_path = File.join(@assignment.repository_folder, @path)
-    rev_number.times.each do |rev|
+    rev_number.times do |rev|
       begin
         revision = repo.get_revision(rev)
         unless revision.path_exists?(assign_path)
@@ -94,7 +94,7 @@ class SubmissionsController < ApplicationController
     end
 
     if @revisions_history.empty?
-      rev_number.times.each do |rev|
+      rev_number.times do |rev|
         begin
           revision = repo.get_revision(rev)
           unless revision.path_exists?(assign_path)

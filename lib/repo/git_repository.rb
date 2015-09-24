@@ -354,7 +354,8 @@ module Repository
         case job[:action]
         when :add_path
           begin
-            make_directory(job[:path])
+            newpath = File.join(job[:path], '.keep')
+            add_file(newpath, '', transaction.user_id)
           rescue Repository::Conflict => e
             transaction.add_conflict(e)
           end
@@ -1093,7 +1094,13 @@ module Repository
     end
 
     # Return changed files at 'path' (recursively)
+    # It would be nice to use @revision number rather than @timestamp, but @revision_number
+    # is not the correct value in this case.
     def changed_files_at_path(path)
+      files = files_at_path(path)
+      result = files.keep_if do |file_name, file|
+        file.last_modified_date == @timestamp
+      end
       return files_at_path_helper(path, true)
     end
 
