@@ -405,6 +405,7 @@ pt:
       show_partial:         "Mostrar parcial"
       show_complete:        "Mostrar completos"
       show_released:        "Mostrar liberados"
+      show_remark_request:  "Mostrar comentários"
       show_assigned_to_me:  "Mostrar atribuidos à você"
       grading_can_begin:    "Avaliação pode começar"
       grading_can_begin_after: "Avaliação pode começar depois %{time}"
@@ -430,6 +431,8 @@ pt:
       revision_history:     "%{num}: "
       search_submissions:   "Pesquisa Submissões"
       how_many_marked:      "%{num_marked}/%{num_assigned} submissões são corrigidos"
+      how_many_marked_short: "%{num_marked}/%{num_assigned} corrigidos"
+      average_annotations:  "%{average_annotations} anotaciones por presentación marcada"
 
     summaries_index:
       search_summaries:     "Pesquisa Resumos"
@@ -1267,7 +1270,7 @@ pt:
     outstanding_remark_requests: "%{request_count} pedidos de avaliação"
 
     #app/views/main/_grader_summary.erb
-    grader_distribution:       "Distribuição de notas:"
+    grader_distribution:       "Distribuição de notas"
     assign_graders:            "Atribuir avaliadores"
 
     #app/views/main/_grade_distribution_graph.html.erb

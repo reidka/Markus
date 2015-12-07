@@ -423,6 +423,7 @@ fr:
       show_partial:         "Partiellement notés"
       show_complete:        "Terminés"
       show_released:        "Notes affichées"
+      show_remark_request:  "Remarques"
       show_assigned_to_me:  "Montrer les groupes qui me sont assignés"
       grading_can_begin:    "L'évaluation peut commencer"
       grading_can_begin_after: "L'évaluation commencera à partir du %{time}"
@@ -448,6 +449,8 @@ fr:
       revision_history:     "%{num} : "
       search_submissions:   "Rechercher Soumissions"
       how_many_marked:      "%{num_marked}/%{num_assigned} soumissions sont corrigés"
+      how_many_marked_short: "%{num_marked}/%{num_assigned} corrigés"
+      average_annotations:  "%{average_annotations} annotations par soumission marquée"
 
     summaries_index:
       group_name:           "Nom du groupe"
@@ -1280,7 +1283,7 @@ fr:
     outstanding_remark_requests: "%{request_count} demandes de remarque restantes."
 
     #app/views/main/_grader_summary.erb
-    grader_distribution:       "Correcteurs assignés :"
+    grader_distribution:       "Correcteurs assignés"
     assign_graders:            "Attribuer Correcteurs"
 
     #app/views/main/_grade_distribution_graph.html.erb
