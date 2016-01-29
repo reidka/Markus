@@ -125,6 +125,7 @@ fr:
       no_submission: "%{group_name} n'a pas d'envoi"
       result_not_saved: "Le résultat du groupe %{group_name} n'a pas pu être sauvegardé."
     collect_submissions:
+      apply_late_penalty: "Appliquer pénalité de retard / Déduire jetons de grâce ( Laissant cette case cochée signifie la soumission ne sera pas pénalisé , indépendamment du moment de la soumission . )"
       collect_all: "Récupérer tous les envois"
       collect_ta: "Récupérer tous les envois qui me sont assignés"
       disable_collect: "Récupération des envois n'est pas disponible, il y a déjà un correcteur assigné aux envois."
@@ -139,6 +140,8 @@ fr:
       no_submission_for_section: "Il n'y a ancun envoi à récupérer pour la section %{section_name}."
       successfully_collected: "Récupération de %{collected} envoi(s)."
       marking_incomplete_warning: "Attention: Cela ne fera que télécharger les envois qui ont été recuillis.\n\nÊtes-vous sûr de vouloir continuer?"
+      collection_incomplete_warning: "La récuperation des envois est en cours. Certains envois seront manquants. Désirez-vous tout de même continuer?"
+      check_collection_status_error: "Une erreur s'est produite lors de la vérification de l'état de la récuperation."
     assignment:
         hidden: "%{assignment_text} (masqué)"
         assignment: "Projet %{short_identifier}"
@@ -168,6 +171,7 @@ fr:
             select_a_group: "Sélectionner un groupe"
             select_a_student: "Sélectionner un(e) étudiant(e)"
             select_a_grader: "Sélectionner un correcteur"
+            group_submission_no_files: "Un ou plusieurs des groupes sélectionnés ne contient aucun fichier dans leur soumission. Grader pas affecté."
             select_only_one_group: "Vous ne pouvez assigner un(e) étudiant(e) qu'à un seul groupe."
             deleted: "Le groupe a été supprimé"
             work_in_groups:  "Les étudiants peuvent travailler en groupe"
@@ -262,6 +266,7 @@ fr:
 
     marks_released_notice:  "Les notes sont maintenant affichées. Vous ne pouvez plus les changer."
     commit_after_due_date: "Ce commit est postérieur à la date de rendu."
+    no_files_submitted: "Cette présentation n'a pas de fichiers."
     past_due_date_edit_warning:  "ATTENTION ! La date de retour que vous avez choisie est antérieure à la date actuelle."
     past_due_date_edit_result_warning: "La date du %{href} de ce groupe est postérieure à la date de retour."
     last_commit: "dernier rendu"
@@ -616,6 +621,8 @@ fr:
       csv:
         could_not_find_source: "Le projet source pour la copie des groupes n'a pas été trouvé."
         could_not_find_target: "Le projet cible pour la copie des groupes n'a pas été trouvé."
+      add_all_groups: "Ajouter tous les groupes"
+      creating_groups_for_all_students: "Création de groupes pour tous les élèves. (Processus qui s'exécute en arrière-plan. Rechargez la page pour voir tous les groupes créés lors.)"
 
     results:
       title:  "Projet %{assignment_name} : %{group_name}"
@@ -705,7 +712,7 @@ fr:
       invite: "Inviter"
       please_wait: "Merci de patienter…"
       work_alone: "Travailleur seul"
-      confirm_delete_group: "Êtes-vous sûr de vouloir supprimer votre groupe ?"
+      confirm_delete_group: "AVERTISSEMENT : Vous perdrez l'accès à vos dossiers présentés après la suppression de votre groupe . Assurez-vous que vous avez une copie locale de vos fichiers avant de cliquer sur OK ."
       delete_your_group: "Suppression du groupe"
       disinvite_member: "Êtes-vous sûr de vouloir annuler l'invitation de cet utilisateur ?"
       member_disinvited: "Ce membre ne fait plus partie du groupe"
@@ -747,6 +754,10 @@ fr:
       update:
         success: "Mise à jour de le correcteur %{user_name}"
         error: "Erreur dans la mise à jour de le correcteur"
+      delete:
+        confirm: "Êtes-vous sûr de vouloir supprimer cette niveleuse?"
+        success: "Supprimé avec succès niveleuse %{user_name}."
+        error:   "Impossible de supprimer niveleuse."
 
     #Graders' View
     graders:
@@ -765,6 +776,7 @@ fr:
       search_criteria:    "Rechercher les critères"
       assign_to_criteria: "Attribuer les correcteurs aux critères"
       lines_not_processed: "Les lignes suivantes n'ont pas pu être traitées : "
+      skip_empty_submissions: "Ne pas attribuer trieurs à des groupes dont les demandes sont vides (exige que les soumissions sont collectées)"
       upload:
         select_csv_file: "Sélectionner un fichier CSV formaté comme suit : <code>user_name,last_name,first_name</code>"
         grader_same_user: "Si un correcteur avec le même nom d'utilisateur existe, ses informations seront mises à jour."

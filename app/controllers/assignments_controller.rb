@@ -180,15 +180,15 @@ class AssignmentsController < ApplicationController
         end
       end
 
-      render :student_assignment_list
+      render :student_assignment_list, layout: 'assignment_content'
     elsif current_user.ta?
       @grade_entry_forms = GradeEntryForm.order(:id)
       @assignments = Assignment.includes(:submission_rule).order(:id)
-      render :grader_index
+      render :grader_index, layout: 'assignment_content'
     else
       @grade_entry_forms = GradeEntryForm.order(:id)
       @assignments = Assignment.includes(:submission_rule).order(:id)
-      render :index
+      render :index, layout: 'assignment_content'
     end
   end
 
@@ -383,16 +383,24 @@ class AssignmentsController < ApplicationController
       unless @grouping.deletable_by?(@current_user)
         raise I18n.t('groups.cant_delete')
       end
+      # Note: This error shouldn't be raised normally, as the student shouldn't
+      # be able to try to delete the group in this case.
       if @grouping.has_submission?
         raise I18n.t('groups.cant_delete_already_submitted')
       end
-      @grouping.student_memberships.includes(:user).each do |member|
-        member.destroy
+
+      if (@grouping.group.assignments.count == 1)
+        # only update repo permissions if the group is not in another assignment
+        @grouping.student_memberships.each do |member|
+          @grouping.remove_member(member.id)
+        end
+      else
+        # remove only the membership, but dont revoke permissions
+        @grouping.student_memberships.includes(:user).each(&:destroy)
       end
-      # update repository permissions
-      @grouping.update_repository_permissions
+
       @grouping.destroy
-      flash[:edit_notice] = I18n.t('assignment.group.deleted')
+      flash[:success] = I18n.t('assignment.group.deleted')
       m_logger.log("Student '#{current_user.user_name}' deleted group '" +
                    "#{@grouping.group.group_name}'.", MarkusLogger::INFO)
 
@@ -447,7 +455,7 @@ class AssignmentsController < ApplicationController
     m_logger = MarkusLogger.instance
     m_logger.log("Student '#{current_user.user_name}' cancelled invitation for " +
                  "'#{disinvited_student.user_name}'.")
-    flash[:edit_notice] = I18n.t('student.member_disinvited')
+    flash[:success] = I18n.t('student.member_disinvited')
   end
 
   # Deletes memberships which have been declined by students
@@ -650,6 +658,9 @@ class AssignmentsController < ApplicationController
       # Is the instructor forming groups?
       if assignment_params[:student_form_groups] == '0'
         assignment.invalid_override = true
+        # Increase group_max so that create_all_groups button is not displayed
+        # in the groups view.
+        assignment.group_max = 2
       else
         assignment.student_form_groups = true
         assignment.invalid_override = false

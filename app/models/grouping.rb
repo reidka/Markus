@@ -469,13 +469,12 @@ class Grouping < ActiveRecord::Base
 
   # If a group is invalid OR valid and the user is the inviter of the group and
   # she is the _only_ member of this grouping it should be deletable
-  # by this user, provided there haven't been any files submitted. Additionally,
-  # the grace period for the assignment should not have passed.
+  # by this user.
+  # Additionally, the grace period for the assignment should not have passed.
   def deletable_by?(user)
     return false unless self.inviter == user
     (!self.is_valid?) || (self.is_valid? &&
-                          self.accepted_students.size == 1 &&
-                          self.number_of_submitted_files == 0 &&
+                          accepted_students.size == 1 &&
                           self.assignment.group_assignment? &&
                           !assignment.past_collection_date?)
   end
@@ -548,27 +547,6 @@ class Grouping < ActiveRecord::Base
     end
     self.criteria_coverage_count = self.all_assigned_criteria(grouping_tas).length
     self.save
-  end
-
-  # Returns an array containing the group names that didn't exist
-  def self.assign_tas_by_csv(csv_file_contents, assignment_id, encoding)
-    failures = []
-    csv_file_contents = csv_file_contents.utf8_encode(encoding)
-    CSV.parse(csv_file_contents) do |row|
-      group_name = row.shift # Knocks the first item from array
-      group = Group.where(group_name: group_name).first
-      if group.nil?
-        failures.push(group_name)
-      else
-        grouping = group.grouping_for_assignment(assignment_id)
-        if grouping.nil?
-          failures.push(group_name)
-        else
-          grouping.add_tas_by_user_name_array(row) # The rest of the array
-        end
-      end
-    end
-    return failures
   end
 
   # Update repository permissions for students, if we allow external commits
@@ -693,6 +671,13 @@ class Grouping < ActiveRecord::Base
     else
       '-'
     end
+  end
+
+  # Helper for populate_submission_table
+  # Returns boolean value based on if the submission has files or not
+  def has_files_in_submission?
+    !has_submission? ||
+    SubmissionFile.where(submission_id: current_submission_used.id).exists?
   end
 
   # Helper for populate_submissions_table.
