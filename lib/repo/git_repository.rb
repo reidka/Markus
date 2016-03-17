@@ -931,7 +931,7 @@ module Repository
       # current_tree is now at the path we were looking for
       objects = []
       current_tree.each do |obj|
-        file_path = path + obj[:name]
+        file_path = File.join(path, obj[:name])
         @last_modified_date_author = find_last_modified_date_author(file_path)
         if obj[:type] == :blob
           # This object is a file
@@ -1060,12 +1060,13 @@ module Repository
 
       # Follow the 'tree-path' and return false if we cannot find
       # each part along the way
-      parts.each { |path_part|
+      parts.each do |path_part|
         found = false
         tree_ptr.each do |current_tree|
           # For each object in this tree check for our part
           if current_tree[:name] == path_part
             # Move to next part of path (next tree / subdirectory)
+            tree_ptr = @repo.lookup(current_tree[:oid])
             found = true
             break
           end
@@ -1073,18 +1074,17 @@ module Repository
         if !found
           return found
         end
-      }
+      end
       # If we made it this far, the path was traversed successfully
       true
     end
 
-    # Return changed files at 'path' (recursively)
-    # It would be nice to use @revision number rather than @timestamp, but @revision_number
-    # is not the correct value in this case.
+    # Return changed files at 'path'
     def changed_files_at_path(path)
       files = files_at_path(path)
-      result = files.keep_if do |file_name, file|
-        file.last_modified_date == @timestamp
+
+      files.select do |_name, file|
+        file.changed
       end
     end
 
@@ -1095,8 +1095,13 @@ module Repository
     private
 
     # Returns the last modified date and author in an array given
-    # the relative path to file as a string
-    def find_last_modified_date_author(relative_path_to_file)
+    # the path to the file as a string
+    def find_last_modified_date_author(path_to_file)
+      # Remove starting forward slash, if present
+      if path_to_file[0] == '/'
+        path_to_file = path_to_file[1..-1]
+      end
+
       # Create a walker to start looking the commit tree.
       walker = Rugged::Walker.new(@repo)
       # Since we are concerned with finding the last modified time,
@@ -1105,7 +1110,7 @@ module Repository
       walker.push(@repo.head.target)
       commit = walker.find do |current_commit|
         current_commit.parents.size == 1 && current_commit.diff(paths:
-            [relative_path_to_file]).size > 0
+            [path_to_file]).size > 0
       end
 
       # Return the date of the last commit that affected this file
