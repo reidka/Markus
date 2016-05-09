@@ -14,8 +14,8 @@ class FlexibleCriterion < Criterion
 
   has_many :tas, through: :criterion_ta_associations
 
-  validates_presence_of :flexible_criterion_name
-  validates_uniqueness_of :flexible_criterion_name,
+  validates_presence_of :name
+  validates_uniqueness_of :name,
                           scope: :assignment_id,
                           message: I18n.t('flexible_criteria.errors.messages.name_taken')
 
@@ -32,6 +32,8 @@ class FlexibleCriterion < Criterion
   validates_numericality_of :max,
                             message: 'must be a number greater than 0.0',
                             greater_than: 0.0
+
+  has_many :test_scripts, as: :criterion
 
   DEFAULT_MAX = 1
 
@@ -59,21 +61,20 @@ class FlexibleCriterion < Criterion
   #                           supplied name is not unique.
   def self.new_from_csv_row(row, assignment)
     if row.length < 2
-      raise CSV::MalformedCSVError, I18n.t('criteria_csv_error.incomplete_row')
+      raise CSVInvalidLineError, I18n.t('csv.invalid_row.invalid_format')
     end
     criterion = FlexibleCriterion.new
     criterion.assignment = assignment
-    criterion.flexible_criterion_name = row[0]
+    criterion.name = row[0]
     # assert that no other criterion uses the same name for the same assignment.
     unless FlexibleCriterion.where(assignment_id: assignment.id,
-                                   flexible_criterion_name: row[0]).size.zero?
-      message = I18n.t('criteria_csv_error.name_not_unique')
-      raise CSV::MalformedCSVError, message
+                                   name: row[0]).size.zero?
+      raise CSVInvalidLineError, I18n.t('csv.invalid_row.duplicate_entry')
     end
 
     criterion.max = row[1]
-    if criterion.max.zero?
-      raise CSV::MalformedCSVError, I18n.t('criteria_csv_error.max_zero')
+    if criterion.max.nil? or criterion.max.zero?
+      raise CSVInvalidLineError, I18n.t('csv.invalid_row.invalid_format')
     end
 
     criterion.description = row[2] if !row[2].nil?
@@ -82,42 +83,7 @@ class FlexibleCriterion < Criterion
     unless criterion.save
       raise CSV::MalformedCSVError, criterion.errors
     end
-
     criterion
-  end
-
-  # Parse a flexible criteria CSV file.
-  #
-  # ===Params:
-  #
-  # file::          A file object which will be tried for parsing.
-  # assignment::    The assignment to which the new criteria should belong to.
-  # invalid_lines:: An object to recieve all encountered _invalid_ lines.
-  #                 Strings representing the faulty line followed by
-  #                 a human readable error message are appended to the object
-  #                 via the << operator.
-  #
-  #                 *Hint*: An array allows for easy
-  #                 access to single invalid lines.
-  #
-  # ===Returns:
-  #
-  # The number of successfully created criteria.
-  def self.parse_csv(file, assignment, invalid_lines = nil)
-    nb_updates = 0
-    CSV.parse(file.read) do |row|
-      next if CSV.generate_line(row).strip.empty?
-      begin
-        FlexibleCriterion.new_from_csv_row(row, assignment)
-        nb_updates += 1
-      rescue CSV::MalformedCSVError => e
-        unless invalid_lines.nil?
-          invalid_lines << row.join(',') + ': ' + e.message
-        end
-      end
-    end
-
-    nb_updates
   end
 
   # ===Returns:
@@ -158,10 +124,6 @@ class FlexibleCriterion < Criterion
                                          assignment: self.assignment)
       end
     end
-  end
-
-  def get_name
-    flexible_criterion_name
   end
 
   def remove_tas(ta_array)

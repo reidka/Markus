@@ -15,10 +15,10 @@ class RubricCriterionTest < ActiveSupport::TestCase
     should validate_numericality_of :weight
     should validate_presence_of :weight
 
-    should validate_presence_of :rubric_criterion_name
+    should validate_presence_of :name
 
     should validate_uniqueness_of(
-                         :rubric_criterion_name).scoped_to(
+                         :name).scoped_to(
                                :assignment_id).with_message(
                                      'Criterion name already used.')
 
@@ -152,10 +152,10 @@ class RubricCriterionTest < ActiveSupport::TestCase
 Documentation,2.7,Horrible,Poor,Satisfactory,Good,Excellent,,,,,\n"
       @assignment = Assignment.make(:marking_scheme_type => 'rubric')
       RubricCriterion.make(:assignment => @assignment,
-                           :rubric_criterion_name => 'Algorithm Design',
+                           :name => 'Algorithm Design',
                            :weight => 2.0)
       RubricCriterion.make(:assignment => @assignment,
-                           :rubric_criterion_name => 'Documentation',
+                           :name => 'Documentation',
                            :weight => 2.7)
 
     end
@@ -166,7 +166,7 @@ Documentation,2.7,Horrible,Poor,Satisfactory,Good,Excellent,,,,,\n"
       @csv_string = "Part 1 Programming,2.0,Horrible,Poor,Satisfactory,Good,Excellent,\"Makes the TA \"\"Shivers\"\"\",\"Leaves the TA \"\"calm\"\"\",\"Makes the TA \"\"grin\"\"\",\"Makes the TA \"\"smile\"\"\",\"Makes, the TA scream: \"\"at last, it was about time\"\"\"\n"
       @assignment = Assignment.make
       RubricCriterion.make(:assignment => @assignment,
-                           :rubric_criterion_name => 'Part 1 Programming',
+                           :name => 'Part 1 Programming',
                            :weight => 2.0,
                            :level_0_description => 'Makes the TA "Shivers"',
                            :level_1_description => 'Leaves the TA "calm"',
@@ -185,34 +185,30 @@ Documentation,2.7,Horrible,Poor,Satisfactory,Good,Excellent,,,,,\n"
     context 'when parsing a CSV file' do
 
       should 'raise an error message on an empty row' do
-        e = assert_raise RuntimeError do
+        assert_raise CSVInvalidLineError do
           RubricCriterion.create_or_update_from_csv_row([], Assignment.new)
         end
-        assert_equal I18n.t('criteria_csv_error.incomplete_row'), e.message
       end
 
       should 'raise an error message on a 1 element row' do
-        e = assert_raise RuntimeError do
+        assert_raise CSVInvalidLineError do
           RubricCriterion.create_or_update_from_csv_row(%w(name), Assignment.new)
         end
-        assert_equal I18n.t('criteria_csv_error.incomplete_row'), e.message
       end
 
       should 'raise an error message on a 2 element row' do
-        e = assert_raise RuntimeError do
+        assert_raise CSVInvalidLineError do
           RubricCriterion.create_or_update_from_csv_row(%w(name 1.0), Assignment.new)
         end
-        assert_equal I18n.t('criteria_csv_error.incomplete_row'), e.message
       end
 
       should 'raise an error message on a row with any number of elements that does not include a name for every criterion' do
         row = %w(name 1.0)
         (0..RubricCriterion::RUBRIC_LEVELS - 2).each do |i|
           row << 'name' + i.to_s
-            e = assert_raise RuntimeError do
+            assert_raise CSVInvalidLineError do
               RubricCriterion.create_or_update_from_csv_row(row, Assignment.new)
             end
-            assert_equal I18n.t('criteria_csv_error.incomplete_row'), e.message
         end
       end
 
@@ -267,7 +263,7 @@ Documentation,2.7,Horrible,Poor,Satisfactory,Good,Excellent,,,,,\n"
             # in @csv_base_row - but they use different level names/descriptions.
             # I'll use the defaults here, and see if I can overwrite with
             # @csv_base_row.
-            criterion.rubric_criterion_name = 'criterion 5'
+            criterion.name = 'criterion 5'
             criterion.assignment = @assignment
             criterion.position = @assignment.next_criterion_position
             criterion.weight = 5.0
@@ -303,30 +299,6 @@ Documentation,2.7,Horrible,Poor,Satisfactory,Good,Excellent,,,,,\n"
       end
 
     end
-
-    should 'be able to parse a valid CSV file' do
-      tempfile = Tempfile.new('rubric_criteria_csv')
-      tempfile << "criterion 6,1.0,l0,l1,l2,l3,l4,d0,d1,d2,d3,d4\n"
-      tempfile.rewind
-      assignment = Assignment.make
-      invalid_lines = []
-
-      nb_updates = RubricCriterion.parse_csv(tempfile, assignment, invalid_lines, nil)
-      assert_equal nb_updates, 1
-      assert invalid_lines.empty?
-    end
-
-    should 'report errors on a invalid CSV file' do
-      tempfile = Tempfile.new('flexible_criteria_csv')
-      tempfile << "criterion 6\n,criterion 7\n"
-      tempfile.rewind
-      assignment = Assignment.make
-      invalid_lines = []
-
-      nb_updates = RubricCriterion.parse_csv(tempfile, assignment, invalid_lines, nil)
-      assert_equal 0, nb_updates
-      assert_equal 2, invalid_lines.length
-    end
   end
 
   ####################   HELPERS    #################################
@@ -335,7 +307,7 @@ Documentation,2.7,Horrible,Poor,Satisfactory,Good,Excellent,,,,,\n"
   # the specified attribute. if attr == nil then all attributes are included
   def create_no_attr(attr)
     new_rubric_criteria = {
-      :rubric_criterion_name => 'somecriteria',
+      :name => 'somecriteria',
       :assignment_id => Assignment.make,
       :weight => 0.25,
       :level_0_name => 'Horrible',
@@ -348,7 +320,4 @@ Documentation,2.7,Horrible,Poor,Satisfactory,Good,Excellent,,,,,\n"
     new_rubric_criteria.delete(attr) if attr
     RubricCriterion.new(new_rubric_criteria)
   end
-
-
-
 end

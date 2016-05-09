@@ -62,7 +62,7 @@ class RubricsController < ApplicationController
   def download_csv
     @assignment = Assignment.find(params[:assignment_id])
     file_out = MarkusCSV.generate(@assignment.rubric_criteria) do |criterion|
-      criterion_array = [criterion.rubric_criterion_name,criterion.weight]
+      criterion_array = [criterion.name,criterion.weight]
       (0..RubricCriterion::RUBRIC_LEVELS - 1).each do |i|
         criterion_array.push(criterion['level_' + i.to_s + '_name'])
       end
@@ -84,27 +84,24 @@ class RubricsController < ApplicationController
   end
 
   def csv_upload
-    file = params[:csv_upload][:rubric]
     @assignment = Assignment.find(params[:assignment_id])
     encoding = params[:encoding]
-    if request.post? && !file.blank?
-      begin
-        RubricCriterion.transaction do
-          invalid_lines = []
-          nb_updates = RubricCriterion.parse_csv(file, @assignment, invalid_lines, encoding)
-          unless invalid_lines.empty?
-            flash[:error] = I18n.t('csv_invalid_lines') + invalid_lines.join(', ')
-          end
-          if nb_updates > 0
-            flash[:notice] = I18n.t('rubric_criteria.upload.success',
-              nb_updates: nb_updates)
-          end
+    if params[:csv_upload] && params[:csv_upload][:rubric]
+      file = params[:csv_upload][:rubric]
+      result = RubricCriterion.transaction do
+        MarkusCSV.parse(file.read, encoding: encoding) do |row|
+          next if CSV.generate_line(row).strip.empty?
+          RubricCriterion.create_or_update_from_csv_row(row, @assignment)
         end
-      rescue CSV::MalformedCSVError
-        flash[:error] = t('csv.upload.malformed_csv')
-      rescue ArgumentError
-        flash[:error] = I18n.t('csv.upload.non_text_file_with_csv_extension')
       end
+      unless result[:invalid_lines].empty?
+        flash_message(:error, result[:invalid_lines])
+      end
+      unless result[:valid_lines].empty?
+        flash_message(:success, result[:valid_lines])
+      end
+    else
+      flash_message(:error, I18n.t('csv.invalid_csv'))
     end
     redirect_to action: 'index', id: @assignment.id
   end
@@ -192,7 +189,7 @@ class RubricsController < ApplicationController
   private
 
   def rubric_criterion_params
-    params.require(:rubric_criterion).permit(:rubric_criterion_name,
+    params.require(:rubric_criterion).permit(:name,
                                              :assignment,
                                              :position,
                                              :level_0_name,

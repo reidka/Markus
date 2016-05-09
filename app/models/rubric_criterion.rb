@@ -25,14 +25,16 @@ class RubricCriterion < Criterion
                             only_integer: true,
                             greater_than: 0
 
-  validates_presence_of :rubric_criterion_name
-  validates_uniqueness_of :rubric_criterion_name,
+  validates_presence_of :name
+  validates_uniqueness_of :name,
                           scope: :assignment_id,
                           message: I18n.t('rubric_criteria.errors.messages.name_taken')
 
   validates_presence_of :assigned_groups_count
   validates_numericality_of :assigned_groups_count
   before_validation :update_assigned_groups_count
+
+  has_many :test_scripts, as: :criterion
 
   def update_assigned_groups_count
     result = []
@@ -103,25 +105,21 @@ class RubricCriterion < Criterion
   #               RUBRIC_LEVELS description (one for each level).
   # assignment::  The assignment to which the newly created criterion should belong.
   #
-  # ===Raises:
-  #
-  # RuntimeError If the row does not contains enough information, if the weight value
-  #                           is zero (or doesn't evaluate to a float)
   def self.create_or_update_from_csv_row(row, assignment)
     if row.length < RUBRIC_LEVELS + 2
-      raise I18n.t('criteria_csv_error.incomplete_row')
+      raise CSVInvalidLineError
     end
     working_row = row.clone
-    rubric_criterion_name = working_row.shift
+    name = working_row.shift
     # If a RubricCriterion of the same name exits, load it up.  Otherwise,
     # create a new one.
     criterion = assignment.rubric_criteria.find_or_create_by(
-      rubric_criterion_name: rubric_criterion_name)
+      name: name)
     #Check that the weight is not a string.
     begin
       criterion.weight = Float(working_row.shift)
     rescue ArgumentError
-      raise ActiveRecord::RecordNotSaved, I18n.t('criteria_csv_error.weight_not_number')
+      raise CSVInvalidLineError
     end
     # Only set the position if this is a new record.
     if criterion.new_record?
@@ -136,7 +134,7 @@ class RubricCriterion < Criterion
       criterion['level_' + i.to_s + '_description'] = working_row.shift
     end
     unless criterion.save
-      raise ActiveRecord::RecordNotSaved.new(criterion.errors)
+      raise CSVInvalidLineError
     end
     criterion
   end
@@ -161,11 +159,11 @@ class RubricCriterion < Criterion
   # RuntimeError If there is not enough information, if the weight value
   #                           is zero (or doesn't evaluate to a float)
   def self.create_or_update_from_yml_key(key, assignment)
-    rubric_criterion_name = key[0]
+    name = key[0]
     # If a RubricCriterion of the same name exits, load it up.  Otherwise,
     # create a new one.
     criterion = assignment.rubric_criteria.find_or_create_by(
-      rubric_criterion_name: rubric_criterion_name)
+      name: name)
     #Check that the weight is not a string.
     begin
       criterion.weight = Float(key[1]['weight'])
@@ -194,37 +192,6 @@ class RubricCriterion < Criterion
     criterion
   end
 
-  # Parse a rubric criteria CSV file.
-  #
-  # ===Params:
-  #
-  # file::          A file object which will be tried for parsing.
-  # assignment::    The assignment to which the new criteria should belong to.
-  # invalid_lines:: An object to recieve all encountered _invalid_ lines.
-  #                 Strings representing the faulty line followed by
-  #                 a human readable error message are appended to the object
-  #                 via the << operator.
-  #
-  #                 *Hint*: An array allows for an easy
-  #                 access of single invalid lines.
-  # ===Returns:
-  #
-  # The number of successfully created criteria.
-  def self.parse_csv(file, assignment, invalid_lines, encoding)
-    nb_updates = 0
-    file = file.utf8_encode(encoding)
-    CSV.parse(file) do |row|
-      next if CSV.generate_line(row).strip.empty?
-      begin
-        RubricCriterion.create_or_update_from_csv_row(row, assignment)
-        nb_updates += 1
-      rescue RuntimeError => e
-        invalid_lines << row.join(',') + ': ' + e.message unless invalid_lines.nil?
-      end
-    end
-    nb_updates
-  end
-
   def get_weight
     self.weight
   end
@@ -251,11 +218,6 @@ class RubricCriterion < Criterion
         criterion_ta_associations.create(ta: ta, criterion: self, assignment: self.assignment)
       end
     end
-  end
-
-
-  def get_name
-    rubric_criterion_name
   end
 
   def remove_tas(ta_array)

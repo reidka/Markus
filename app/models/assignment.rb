@@ -15,7 +15,18 @@ class Assignment < ActiveRecord::Base
   has_many :flexible_criteria,
            -> { order(:position) },
            class_name: 'FlexibleCriterion',
-		   dependent: :destroy
+       dependent: :destroy
+
+  has_many :test_support_files, :dependent => :destroy
+  accepts_nested_attributes_for :test_support_files, allow_destroy: true
+  has_many :test_scripts, :dependent => :destroy
+  accepts_nested_attributes_for :test_scripts, allow_destroy: true
+
+
+  has_many :annotation_categories,
+           -> { order(:position) },
+           class_name: 'AnnotationCategory',
+           dependent: :destroy
 
   has_many :criterion_ta_associations,
 		   dependent: :destroy
@@ -24,9 +35,6 @@ class Assignment < ActiveRecord::Base
 		   dependent: :destroy
   accepts_nested_attributes_for :assignment_files, allow_destroy: true
   validates_associated :assignment_files
-
-  has_many :test_files, dependent: :destroy
-  accepts_nested_attributes_for :test_files, allow_destroy: true
 
   has_one :assignment_stat, dependent: :destroy
   accepts_nested_attributes_for :assignment_stat, allow_destroy: true
@@ -57,7 +65,6 @@ class Assignment < ActiveRecord::Base
   validates_uniqueness_of :short_identifier, case_sensitive: true
   validates_numericality_of :group_min, only_integer: true, greater_than: 0
   validates_numericality_of :group_max, only_integer: true, greater_than: 0
-  validates_numericality_of :tokens_per_day, only_integer: true, greater_than_or_equal_to: 0
 
   has_one :submission_rule, dependent: :destroy, inverse_of: :assignment
   accepts_nested_attributes_for :submission_rule, allow_destroy: true
@@ -72,6 +79,7 @@ class Assignment < ActiveRecord::Base
   validates_presence_of :group_min
   validates_presence_of :group_max
   validates_presence_of :notes_count
+  validates_presence_of :assignment_stat
   # "validates_presence_of" for boolean values.
   validates_inclusion_of :allow_web_submits, in: [true, false]
   validates_inclusion_of :vcs_submit, in: [true, false]
@@ -79,8 +87,22 @@ class Assignment < ActiveRecord::Base
   validates_inclusion_of :is_hidden, in: [true, false]
   validates_inclusion_of :enable_test, in: [true, false]
   validates_inclusion_of :assign_graders_to_criteria, in: [true, false]
+  validates_inclusion_of :unlimited_tokens, in: [true, false]
 
+  with_options unless: :unlimited_tokens do |assignment|
+    assignment.validates :tokens_per_period,
+                         presence: true,
+                         numericality: { only_integer: true,
+                                         greater_than_or_equal_to: 0 }
+    assignment.validates :token_period,
+                         presence: true,
+                         numericality: { greater_than: 0 }
+  end
+
+  validates_presence_of :token_start_date, if: :enable_test
   validate :minimum_number_of_groups
+
+  after_create :build_repository
 
   before_save :reset_collection_time
 
@@ -120,7 +142,7 @@ class Assignment < ActiveRecord::Base
         'name' =>  criterion['level_4_name'] ,
         'description' => criterion['level_4_description']
       }
-      criteria_yml = { "#{criterion['rubric_criterion_name']}" => inner }
+      criteria_yml = { "#{criterion.name}" => inner }
       final = final.merge(criteria_yml)
     end
     final.to_yaml
@@ -192,7 +214,6 @@ class Assignment < ActiveRecord::Base
   # Calculate the latest due date among all sections for the assignment.
   def latest_due_date
     return due_date unless section_due_dates_type
-
     due_dates = section_due_dates.map(&:due_date) << due_date
     due_dates.compact.max
   end
@@ -303,7 +324,7 @@ class Assignment < ActiveRecord::Base
       submission = grouping.current_submission_used
       if !submission.nil? && submission.has_remark?
         if submission.remark_result.marking_state ==
-            Result::MARKING_STATES[:partial]
+            Result::MARKING_STATES[:incomplete]
           outstanding_count += 1
         end
       end
@@ -315,6 +336,15 @@ class Assignment < ActiveRecord::Base
   def total_criteria_weight
     factor = 10.0 ** 2
     (rubric_criteria.sum('weight') * factor).floor / factor
+  end
+
+  def total_test_script_marks
+    return test_scripts.sum("max_marks")
+  end
+
+  #total marks for scripts that are run on request
+  def total_ror_script_marks
+    return test_scripts.where("run_on_request" => true).sum("max_marks")
   end
 
   def add_group(new_group_name=nil)
@@ -391,16 +421,20 @@ class Assignment < ActiveRecord::Base
   def add_csv_group(row)
     return if row.length.zero?
 
-    row.map! { |item| item.strip }
+    begin
+      row.map! { |item| item.strip }
+    rescue NoMethodError
+      raise CSVInvalidLineError
+    end
 
     group = Group.where(group_name: row.first).first
 
     unless group.nil?
       if group.repo_name != row[1]
-        # CASE: Group already exits but the repo name is different
+        # CASE: Group already exists but the repo name is different
         duplicate_group_error = I18n.t('csv.group_with_different_repo',
                                        group_name: row[0])
-        return duplicate_group_error
+        raise CSVInvalidLineError, duplicate_group_error
       else
         any_grouping = Grouping.find_by group_id: group.id
         if any_grouping.nil?
@@ -429,7 +463,7 @@ class Assignment < ActiveRecord::Base
               duplicate_group_error = I18n.t(
                 'csv.group_with_different_membership_different_assignment',
                 group_name: row[0])
-              return duplicate_group_error
+              raise CSVInvalidLineError, duplicate_group_error
             end
           else
             if same_membership_as_csv_row?(row,
@@ -449,7 +483,7 @@ class Assignment < ActiveRecord::Base
               duplicate_group_error = I18n.t(
                 'csv.group_with_different_membership_current_assignment',
                 group_name: row[0])
-              return duplicate_group_error
+              raise CSVInvalidLineError, duplicate_group_error
             end
           end
         end
@@ -489,12 +523,16 @@ class Assignment < ActiveRecord::Base
 
     # If a repository already exists with the same repo name as the one given
     #  in the csv file, error is returned and the group is not created
-    if repository_already_exists?(repo_name)
-      repository_error = I18n.t('csv.repository_already_exists',
-                                group_name: row[0],
-                                repo_path: errors.get(:repo_name).last)
-      errors.delete(:repo_name)
-      return repository_error
+    begin
+      if repository_already_exists?(repo_name)
+        repository_error = I18n.t('csv.repository_already_exists',
+                                  group_name: row[0],
+                                  repo_path: errors.get(:repo_name).last)
+        errors.delete(:repo_name)
+        return repository_error
+      end
+    rescue TypeError
+      raise CSV::MalformedCSVError
     end
 
     # At this point we can be sure that the group_name, memberships and
@@ -814,10 +852,10 @@ class Assignment < ActiveRecord::Base
   def add_graders_to_criterion(criterion_name, graders)
     if marking_scheme_type == 'rubric'
       criterion = rubric_criteria.find_by(
-        rubric_criterion_name: criterion_name)
+        name: criterion_name)
     else
       criterion = flexible_criteria.find_by(
-        flexible_criterion_name: criterion_name)
+        name: criterion_name)
     end
 
     if criterion.nil?
@@ -851,6 +889,66 @@ class Assignment < ActiveRecord::Base
     end
   end
 
+  # TODO: This is currently disabled until starter code is automatically added
+  # to groups.
+  def can_upload_starter_code?
+    #groups.size == 0
+    false
+  end
+
+  ### REPO ###
+
+  def repository_name
+    "#{short_identifier}_starter_code"
+  end
+
+  def build_repository
+    # create repositories if and only if we are admin
+    return true unless MarkusConfigurator.markus_config_repository_admin?
+    # only create if we can add starter code
+    return true unless can_upload_starter_code?
+    begin
+      Repository.get_class(MarkusConfigurator.markus_config_repository_type,
+                           repository_config)
+                .create(File.join(MarkusConfigurator.markus_config_repository_storage,
+                                  repository_name))
+    rescue Repository::RepositoryCollision => e
+      # log the collision
+      errors.add(:base, self.repo_name)
+      m_logger = MarkusLogger.instance
+      m_logger.log("Creating repository '#{repository_name}' caused repository collision. " +
+                     "Error message: '#{e.message}'",
+                   MarkusLogger::ERROR)
+    end
+    true
+  end
+
+  def repository_config
+    conf = Hash.new
+    conf['IS_REPOSITORY_ADMIN'] = MarkusConfigurator.markus_config_repository_admin?
+    conf['REPOSITORY_PERMISSION_FILE'] = MarkusConfigurator.markus_config_repository_permission_file
+    conf['REPOSITORY_STORAGE'] = MarkusConfigurator.markus_config_repository_storage
+    conf
+  end
+
+  # Return a repository object, if possible
+  def repo
+    repo_loc = File.join(MarkusConfigurator.markus_config_repository_storage, repository_name)
+    if Repository.get_class(MarkusConfigurator.markus_config_repository_type, repository_config).repository_exists?(repo_loc)
+      Repository.get_class(MarkusConfigurator.markus_config_repository_type, repository_config).open(repo_loc)
+    else
+      raise 'Repository not found and MarkUs not in authoritative mode!' # repository not found, and we are not repo-admin
+    end
+  end
+
+  #Yields a repository object, if possible, and closes it after it is finished
+  def access_repo
+    yield repo
+    repo.close()
+  end
+
+  ### /REPO ###
+
   private
 
   # Returns true if we are safe to set the repository name
@@ -877,7 +975,7 @@ class Assignment < ActiveRecord::Base
 
   def update_assigned_tokens
     self.tokens.each do |t|
-      t.update_tokens(tokens_per_day_was, tokens_per_day)
+      t.update_tokens(tokens_per_period_was, tokens_per_period)
     end
   end
 
