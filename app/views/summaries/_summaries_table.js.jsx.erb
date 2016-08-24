@@ -44,7 +44,7 @@
 
       <% for criterion in @criteria %>
         columns.push({
-          id: 'criterion_' + <%= criterion.id %>,
+          id: 'criterion_' + '<%= criterion.class.to_s %>' + '_' + <%= criterion.id %>,
           content: '<%= criterion.name %>',
           sortable: true,
           compare: compare_numeric_values,
@@ -161,7 +161,7 @@
         if (summary.name_url === '') {
           s['group_name'] = <span>{summary.name}</span>;
         } else {
-          s['group_name'] = <span><a href={summary.name_url}>{summary.name}</a></span>;
+          s['group_name'] = <a href={summary.name_url}>{summary.name}</a>;
         };
         if (summary.late_commit) {
           s['commit_date'] = (<span>
@@ -179,7 +179,7 @@
         s['section'] = summary.section
         s['state'] = summary.state;
         <% for criterion in @criteria %>
-          var key = 'criterion_' + '<%= criterion.id %>';
+          var key = 'criterion_' + '<%= criterion.class.to_s %>' + '_' + '<%= criterion.id %>';
           s[key] = summary.criteria[key];
         <% end %>
         return s;

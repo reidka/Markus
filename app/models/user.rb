@@ -73,7 +73,7 @@ class User < ActiveRecord::Base
       #  1 means no such user
       #  2 means bad password
       #  3 is used for other error exits
-      pipe = IO.popen(MarkusConfigurator.markus_config_validate_file, 'w+')
+      pipe = IO.popen("'#{MarkusConfigurator.markus_config_validate_file}'", 'w+') # quotes to avoid choking on spaces
       pipe.puts("#{login}\n#{password}") # write to stdin of markus_config_validate
       pipe.close
       m_logger = MarkusLogger.instance
@@ -126,6 +126,33 @@ class User < ActiveRecord::Base
     grouping = grouping_for(aid)
     return if grouping.nil?
     grouping.current_submission_used
+  end
+
+  def grouping_for(aid)
+    groupings.find {|g| g.assignment_id == aid}
+  end
+
+  def is_a_reviewer?(assignment)
+    is_a?(Student) && assignment.is_peer_review?
+  end
+
+  def is_reviewer_for?(assignment, result)
+    # aid is the peer review assignment id, and result_id
+    # is the peer review result
+    if assignment.nil?
+      return false
+    end
+    group =  grouping_for(Integer(assignment.id))
+    if group.nil?
+      return false
+    end
+    prs = PeerReview.where(reviewer_id: group.id)
+    if prs.first.nil?
+      return false
+    end
+    pr = prs.find {|p| p.result_id == Integer(result.id)}
+
+    is_a?(Student) && !pr.nil?
   end
 
   def self.upload_user_list(user_class, user_list, encoding)
@@ -195,19 +222,6 @@ class User < ActiveRecord::Base
     current_user
   end
 
-  # Convenience method which returns a configuration Hash for the
-  # repository lib
-  def self.repo_config
-    {
-      'IS_REPOSITORY_ADMIN' =>
-          MarkusConfigurator.markus_config_repository_admin?,
-      'REPOSITORY_STORAGE' =>
-          MarkusConfigurator.markus_config_repository_storage,
-      'REPOSITORY_PERMISSION_FILE' =>
-          MarkusConfigurator.markus_config_repository_permission_file
-    }
-  end
-
   # Set API key for user model. The key is a
   # SHA2 512 bit long digest, which is in turn
   # MD5 digested and Base64 encoded so that it doesn't
@@ -269,9 +283,7 @@ class User < ActiveRecord::Base
     # If we're not the repository admin, bail out
     return if(self.student? or !MarkusConfigurator.markus_config_repository_admin?)
 
-    conf = User.repo_config
-    repo = Repository.get_class(MarkusConfigurator.markus_config_repository_type,
-                                conf)
+    repo = Repository.get_class(MarkusConfigurator.markus_config_repository_type)
     repo_names = Group.all.collect do |group|
                    File.join(MarkusConfigurator.markus_config_repository_storage,
                              group.repository_name)
@@ -283,8 +295,7 @@ class User < ActiveRecord::Base
   def revoke_repository_permissions
     return if(self.student? or !MarkusConfigurator.markus_config_repository_admin?)
 
-    conf = User.repo_config
-    repo = Repository.get_class(MarkusConfigurator.markus_config_repository_type, conf)
+    repo = Repository.get_class(MarkusConfigurator.markus_config_repository_type)
     repo_names = Group.all.collect do |group| File.join(MarkusConfigurator.markus_config_repository_storage, group.repository_name) end
     repo.delete_bulk_permissions(repo_names, [self.user_name])
   end
@@ -293,7 +304,7 @@ class User < ActiveRecord::Base
     return if(self.student? or !MarkusConfigurator.markus_config_repository_admin?)
     if self.user_name_changed?
       conf = User.repo_config
-      repo = Repository.get_class(MarkusConfigurator.markus_config_repository_type, conf)
+      repo = Repository.get_class(MarkusConfigurator.markus_config_repository_type)
       repo_names = Group.all.collect do |group| File.join(MarkusConfigurator.markus_config_repository_storage, group.repository_name) end
       repo.delete_bulk_permissions(repo_names, [self.user_name_was])
       repo.set_bulk_permissions(repo_names, {self.user_name => Repository::Permission::READ_WRITE})

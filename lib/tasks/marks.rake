@@ -1,17 +1,8 @@
 namespace :db do
 
-  desc 'Create fake marks for assignments'
+  desc 'Update fake marks for assignments'
   task :marks => :environment do
     puts 'Assign Marks for Assignments'
-
-    #Function used to create marks for both criterias
-    def create_mark(result_id, markable_type, markable)
-      Mark.create(
-        result_id: result_id,
-        mark: rand(0..4),
-        markable_type: markable_type,
-        markable: markable)
-    end
 
     #Right now, only generate marks for two assignments
     Grouping.where(assignment_id: [1, 2]).each do |grouping|
@@ -21,22 +12,20 @@ namespace :db do
       grouping.is_collected = true
       grouping.save
 
-      #Automate marks for assignment using flexible criteria
-      if grouping.assignment.marking_scheme_type == Assignment::MARKING_SCHEME_TYPE[:flexible]
-        grouping.assignment.flexible_criteria.each do |flexible|
-          mark = create_mark(result.id, grouping.assignment.marking_scheme_type, flexible)
-          result.marks.push(mark)
-          result.save
+      #Automate marks for assignment using appropriate criteria
+      grouping.assignment.get_criteria(:all, :all, includes: :marks).each do |criterion|
+        if criterion.class == RubricCriterion
+          random_mark = criterion.max_mark / 4 * rand(0..4)
+        elsif criterion.class == FlexibleCriterion
+          random_mark = rand(0..criterion.max_mark.to_i)
+        else
+          random_mark = rand(0..1)
         end
-      end
-
-      #Automate marks for assignment using rubric criteria
-      if grouping.assignment.marking_scheme_type == Assignment::MARKING_SCHEME_TYPE[:rubric]
-        grouping.assignment.rubric_criteria.each do |rubric|
-          mark = create_mark(result.id, grouping.assignment.marking_scheme_type, rubric)
-          result.marks.push(mark)
-          result.save
-        end
+        on_result_creation_mark = Mark.find_by(result_id:     result.id,
+                                               markable_id:   criterion.id,
+                                               markable_type: criterion.class.to_s)
+        on_result_creation_mark.update_attribute(:mark, random_mark)
+        result.save
       end
     end
 

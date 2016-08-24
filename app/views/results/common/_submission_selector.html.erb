@@ -1,69 +1,81 @@
 <div id='criterion_incomplete_error' class='error' style='display:none'></div>
 
 <div id='student_selector'>
-  <span class='left'>
-    <% if !previous_grouping.nil?%>
-      <%= link_to t('marker.previous_submission'), action: 'next_grouping', id: previous_grouping.id %>
-    <% else %>
-      <span class='disable'><%= t('marker.previous_submission') %></span>
-    <% end %>
-  </span>
+  <% unless @result.is_a_review? && !@current_user.student? %>
+    <span class='left'>
+      <% if !previous_grouping.nil?%>
+        <%= link_to t('marker.previous_submission'), action: 'next_grouping',
+                    assignment_id: @assignment.id, id: @result.id,
+                    grouping_id: previous_grouping.id %>
+      <% else %>
+        <span class='disable'><%= t('marker.previous_submission') %></span>
+      <% end %>
+    </span>
+  <% end %>
 
   <span class='middle'>
-    <%= link_to raw(t('marker.notes',
-                      notes: @grouping.notes.size)),
-                    notes_dialog_note_path(id: @grouping.assignment_id,
-                                           noteable_id: @grouping.id,
-                                           noteable_type: 'Grouping',
-                                           action_to: 'note_message',
-                                           controller_to: 'results',
-                                           highlight_field: 'notes_dialog_link',
-                                           number_of_notes_field: 'number_of_notes'),
-                    id: 'notes_dialog_link',
-                    remote: true %>
+    <% unless @result.is_a_review? %>
+      <%= link_to raw(t('marker.notes',
+                        notes: @grouping.notes.size)),
+                      notes_dialog_note_path(id: @grouping.assignment_id,
+                                             noteable_id: @grouping.id,
+                                             noteable_type: 'Grouping',
+                                             action_to: 'note_message',
+                                             controller_to: 'results',
+                                             highlight_field: 'notes_dialog_link',
+                                             number_of_notes_field: 'number_of_notes'),
+                      id: 'notes_dialog_link',
+                      remote: true %>
     |
+    <% end %>
     (
     <em><%= t('marker.marks.total_mark') %></em>
-    <span id='current_mark_div'><%= result.total_mark %></span> /
-    <span id='total_mark_div'><%= assignment.total_mark %></span>
+    <span id='current_mark_div'><%= result.total_mark %></span>/
+    <span id='total_mark_div'><%= assignment.max_mark(@result.is_a_review? ? :peer : :ta) %></span>
     )
     |
-    <% if @result.marking_state == Result::MARKING_STATES[:complete] %>
-      <%= button_to t('marker.revert_to_incomplete'), 
-                    url_for(action: 'toggle_marking_state', id: @result.id), 
-                    disabled: @result.released_to_students,
-                    form: { style: 'display:inline-block;', id: 'toggle_marking_state' },
-                    remote: true %> 
-    <% else %>
-      <%= button_to t('marker.set_to_complete'), 
-                    url_for(action: 'toggle_marking_state', id: @result.id), 
-                    disabled: @result.released_to_students,
-                    form: { style: 'display:inline-block;', id: 'toggle_marking_state' },
-                    remote: true %> 
+    <% unless @result.is_a_review? && !@current_user.student? %>
+      <% if @result.marking_state == Result::MARKING_STATES[:complete] %>
+        <%= button_to t('marker.revert_to_incomplete'),
+                      url_for(action: 'toggle_marking_state', id: @result.id),
+                      disabled: @result.released_to_students,
+                      form: { style: 'display:inline-block;', id: 'toggle_marking_state' },
+                      remote: true %>
+      <% else %>
+        <%= button_to t('marker.set_to_complete'),
+                      url_for(action: 'toggle_marking_state', id: @result.id),
+                      disabled: @result.released_to_students,
+                      form: { style: 'display:inline-block;', id: 'toggle_marking_state' },
+                      remote: true %>
+      <% end %>
     <% end %>
 
     <% if @current_user.admin? %>
       <% if @result.released_to_students %>
         <%= button_to t('marker.marks.unrelease'),
                       url_for(action: 'set_released_to_students', id: @result.id),
-                      disabled: result.marking_state != Result::MARKING_STATES[:complete],
+                      disabled: @result.is_a_review? ? false : @result.marking_state != Result::MARKING_STATES[:complete],
                       form: { style: 'display:inline-block;', id: 'toggle_released' },
                       remote: true %>
       <% else %>
         <%= button_to t('marker.marks.release'),
                       url_for(action: 'set_released_to_students', id: @result.id),
-                      disabled: result.marking_state != Result::MARKING_STATES[:complete],
+                      disabled: @result.is_a_review? ? false : @result.marking_state != Result::MARKING_STATES[:complete],
                       form: { style: 'display:inline-block;', id: 'toggle_released' },
                       remote: true %>
       <% end %>
     <% end %>
   </span>
 
-  <span class='right'>
-    <% if !next_grouping.nil? %>
-      <%= link_to t('marker.next_submission'), action: 'next_grouping', id: @next_grouping.id%>
-    <% else %>
-      <span class='disable'><%= t('marker.next_submission') %></span>
-    <% end %>
-  </span>
+  <% unless @result.is_a_review? && !@current_user.student? %>
+    <span class='right'>
+      <% if !next_grouping.nil? %>
+        <%= link_to t('marker.next_submission'), action: 'next_grouping',
+                    assignment_id: @assignment.id, id: @result.id,
+                    grouping_id: @next_grouping.id%>
+      <% else %>
+        <span class='disable'><%= t('marker.next_submission') %></span>
+      <% end %>
+    </span>
+  <% end %>
 </div>

@@ -364,7 +364,20 @@ fieldset {
   }
 
   .right {
-    float: right;
+    min-width: 16%;
+    min-height: 33%;
+  }
+
+  .left{
+    float: left;
+    min-width: 55%;
+    min-height: 33%;
+  }
+
+  .center{
+    display: inline-block;
+    min-width: 27%;
+    min-height: 33%;
   }
 
   ul {
@@ -390,7 +403,6 @@ fieldset {
     }
   }
 }
-
 
 /** Tab pane */
 
@@ -618,6 +630,17 @@ nav {
     ul {
       display: block;
     }
+  }
+
+  .arrow_down {
+    width: 0;
+    height: 0;
+    margin-top: 3px;
+    margin-right: 3px;
+    border-left: 7.5px solid transparent;
+    border-right: 7.5px solid transparent;
+    border-top: 7.5px solid $dark-blue;
+    float: right;
   }
 
   ul {

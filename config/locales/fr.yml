@@ -160,7 +160,7 @@ fr:
         error: "La règle d'envoi n'a pas pu être mise en place : #%{message}"
         not_valid_submission_rule: "%{type} n'est pas une règle d'envoi valide"
         rules:           "Règles du projet"
-        edit:           "Édition du projet :"
+        edit:           "Édition du projet: "
         required_files:  "Fichiers requis"
         submission_rules:  "Règles d'envoi"
         required_files_read:  "Fichiers requis pour le projet."
@@ -177,6 +177,7 @@ fr:
             select_a_group: "Sélectionner un groupe"
             select_a_student: "Sélectionner un(e) étudiant(e)"
             select_a_grader: "Sélectionner un correcteur"
+            select_a_criterion: "Sélectionnez au moins un critère"
             group_submission_no_files: "Un ou plusieurs des groupes sélectionnés ne contient aucun fichier dans leur soumission. Grader pas affecté."
             select_only_one_group: "Vous ne pouvez assigner un(e) étudiant(e) qu'à un seul groupe."
             deleted: "Le groupe a été supprimé"
@@ -199,14 +200,44 @@ fr:
             title: "Barème"
             rubric: "Rubrique (barème pré-défini)"
             flexible: "Flexible (barème à définir par le correcteur)"
-        notice:
-            change_marking_scheme_type: "Changer le barème effacera vos critères et vos évaluations."
         allow_web_submits: "Envois via l'interface web"
         vcs_submit: "permettre soumet à travers le contrôle de version"
         is_hidden: "Cacher le projet aux étudiants"
         display_grader_names_to_students: "Afficher le nom du correcteur aux étudiants"
         section_due_date_option:  "Si l'option date de retour par section est sélectionnée, les groupes seront restreints aux sections"
         section_due_dates_info:  "<b>Important</b> La date de retour « globale » doit être indiquée. Si une section n'a pas de date de retour spécifique, la date « globale » sera utilisée. Si certains étudiants ne font partie d'aucune section, ce sera aussi cette date « globale » qui sera utilisée. Ces étudiants ne pourront se mettre qu'avec d'autres étudiants n'appartenant pas à des sections."
+        has_peer_review: "Activer élèves-étudiants d'examen par les pairs"
+        configure_peer_review: "Configurer examen par les pairs"
+        peer_review_record_missing: "Erreur: Examen par les pairs cession manquant dans la base de données"
+        start_peer_review: "Examen par les pairs"
+        peer_review_results: "Examen par les pairs Résultats"
+        your_reviews: "Vos avis"
+        review: "Avis"
+    peer_review:
+        assign: "Attribuer examen par les pairs"
+        review: "Avis "
+        reviews: "Avis"
+        problem: "Un problème inattendu est survenue"
+        submission_nil_failure: "Les soumissions pour l'affectation d'origine doivent être collectées première"
+        random_assign_failure: "Impossible d'attribuer au hasard, trop de commentaires demandés par évaluateur / CONTRÔLER sélectionnés"
+        number_of_reviews_header: "Nombre d'avis"
+        assigned_reviewers_header: "Assigned examinateurs"
+        reviewer_group: "Groupe avis"
+        reviewee_group: "Groupe pays examin"
+        reviews_made_on_submission: "Avis faites sur votre soumission: "
+        reviewers_reviews: "Les avis de ce réviseur: "
+        view_ta_result: "Voir TA Résultat"
+        empty_list_reviewers: "Vous ne pouvez pas avoir une liste vide d'examinateurs"
+        empty_list_reviewees: "Vous ne pouvez pas avoir une liste vide de CONTRÔLER"
+        cannot_allow_reviewer_to_be_reviewee: "Un étudiant ne peut pas être un réviseur et pays examiné"
+        number_per_group: "Nombre d'examens par les pairs par groupe"
+        number_assigned_reviewers: "Numéro attribué examinateurs"
+        download:
+            assigned_reviewers_header: "Télécharger Peer Review missions"
+            assigned_reviewers_csv: "Auteur groupe groupe CSV pays examiné"
+        upload:
+            header: "Télécharger Peer Review CSV"
+            description: "Format de fichier CSV: Portugais<code>result_id,group_name</code> Objet"
     your_mark:  "Votre note : "
 
     members:            "Membres"
@@ -246,6 +277,7 @@ fr:
     grades:             "Notes"
     submissions:        "Envois"
     summaries:          "Récapitulatif"
+    peer_reviews:       "Examens par le pairs"
     rubrics:            "Rubriques"
     marking_scheme:     "Barème"
     join:               "Rejoindre"
@@ -331,7 +363,7 @@ fr:
       set_to_complete:      "Réglage pour terminer"
       revert_to_incomplete: "Revenir à incomplet"
       notes:                "Remarques (<span id=\"number_of_notes\">%{notes}</span>)"
-      include_annotations: "Ajouter les annotations : "
+      include_annotations: "Ajouter les annotations"
       include_annotations_warning: "Attention! Annotations sur les fichiers PDF ne sont actuellement pas téléchargés."
       select_a_test: "S'il vous plaît sélectionner un test"
       marks:
@@ -406,14 +438,15 @@ fr:
     still_working_warning: "Il y a des travaux non terminés. Ils pourraient ne pas être sauvegardés si vous quittez maintenant."
 
     csv:
-      repo_collision_warning: "Attention : le répertoire '%{repo_name}' existe déjà. Le nom du groupe était '%{group_name}'."
+      repo_collision_warning:  "Attention : le répertoire '%{repo_name}' existe déjà. Le nom du groupe était '%{group_name}'."
       line_nr_csv_file_prefix: "ligne %{line_number} du fichier CSV :"
-      group_to_grader: "Vous devez envoyer un fichier CSV pour attribuer des correcteurs aux groupes."
-      student_to_grader: "Vous devez envoyer un fichier CSV pour attribuer des correcteurs aux étudiants."
-      invalid_csv: "Le format du fichier CSV n'a pas été reconnu"
+      group_to_grader:         "Vous devez envoyer un fichier CSV pour attribuer des correcteurs aux groupes."
+      student_to_grader:       "Vous devez envoyer un fichier CSV pour attribuer des correcteurs aux étudiants."
+      invalid_csv:             "Le format du fichier CSV n'a pas été reconnu"
+      no_assignment:           "L'affectation que vous essayez de créer des critères pour n'existe pas encore"
       invalid_row:
               duplicate_entry: "Double entrée"
-              invalid_format: "Invalid format de ligne"
+              invalid_format:  "Invalid format de ligne"
       upload:
         malformed_csv: "Le fichier sélectionné a été mal formé. Se il vous plaît vérifier que le fichier est conforme aux spécifications Markus."
         non_text_file_with_csv_extension: "Le fichier sélectionné ne est pas un fichier csv (même si elle peut avoir une extension .csv)."
@@ -438,12 +471,17 @@ fr:
       could_not_collect:    "N'a pas pu récupérer cette révision pour le groupe %{group_name}. — La date de de récupération n'a pas encore été atteinte."
       release_marks:        "Montrer les notes"
       unrelease_marks:      "Cacher les notes"
+      release_prs:          "Examens par les pairs de sortie"
+      unrelease_prs:        "Un libération examens par les pairs"
       run_tests:            "UPDATE ME"
       group_name:           "Nom du groupe"
+      reviewer_name:        "Critique"
+      reviewee_name:        "Pays examiné"
       repository:           "Répertoire"
       repository_name:      "Répertoire : %{repository}"
       commit_date:          "Date d'envoi (commit)"
       marking_state:        "Affichage de la note"
+      review_state:         "Avis Etat"
       grace_credits_used:   "Utilisation des \"grace credits\""
       final_grade:          "Note finale"
       class_average:        "Moyenne : %{results_average}"
@@ -654,17 +692,19 @@ fr:
 
     results:
       title:  "Projet %{assignment_name} : %{group_name}"
+      review_title: "Avis %{assignment_name} : %{group_name}"
       results_name:  "Résultats"
       successfully_changed: "Les %{changed} résultats ont été mis à jour."
       must_select_a_group:  "Vous devez sélectionner au moins un groupe à mettre à jour."
       must_select_a_group_to_collect:  "Vous devez sélectionner au moins un groupe pour recueillir."
       editing_after_release_fail: "Les notes ont été dévoilées, vous ne pouvez plus changer l'évaluation."
       could_not_find_file: "N'a pas pu trouver le fichier %{filename} dans le répertoire %{repository_name}"
+      results_for: "Résultats pour "
+      review_for: "Avis pour "
 
     mark:
       error:
-        validate_flexible: "La note doit être comprise entre 0 et la note maximale du critère."
-        validate_rubric: "La note doit être comprise entre 0 et 4." #TODO: Why 4?
+        validate_criteria: "La note doit être comprise entre 0 et la note maximale du critère."
 
     # Student's View
     students:
@@ -705,6 +745,7 @@ fr:
     #Sutdent's View (student)
     student:
       assignment: "Projet %{short_identifier}"
+      peer_assignment: "%{short_identifier}: Projet d'examen par les pairs"
       group_information: "Informations sur le groupe"
       group_not_valid: "Votre groupe n'est pas valide. Vous ne pouvez rien envoyer pour le moment."
       overview: "Vue d'ensemble"
@@ -712,6 +753,8 @@ fr:
       files: "Fichiers"
       missing_required_files: "<span class=\"info_number\">%{missing_files}</span><span class=\"info %{style_class}\"> fichier(s) requis sont manquants</span>"
       no_submission_yet: "Vous n'avez encore rien envoyé"
+      no_peer_submission_yet: "Vous avez aucune observation à révision."
+      no_reviews: "Personne ne vous a encore de commentaires."
       no_group_yet: "Vous ne faites pas encore partie d'un groupe"
       grace_date_passed: "et la période de grâce pour ce projet est terminée"
       not_allowed_to_form_group: "Vous n'êtes pas autorisé à former vous-même des groupes pour ce projet.
@@ -802,6 +845,7 @@ fr:
       not_covered:        "Pas couvert"
       covered:            "Couvert"
       coverage:           "Couverture"
+      problem:            "Il y avait un problème..."
       search_criteria:    "Rechercher les critères"
       assign_to_criteria: "Attribuer les correcteurs aux critères"
       lines_not_processed: "Les lignes suivantes n'ont pas pu être traitées : "
@@ -849,14 +893,6 @@ fr:
       update:
         success: "Mise à jour de l'administrateur %{user_name}"
         error: "Erreur dans la mise à jour de l'administrateur"
-
-    rubrics:
-      move_criterion:
-        error: "Erreur: impossible de déplacer cette rubric."
-
-    flexible_criteria:
-      move_criterion:
-        error: "Erreur: impossible de déplacer ce critère (flexible)."
 
     add_student:
       success: "L'étudiant(e) %{user_name} a été ajouté(e)."
@@ -1054,15 +1090,79 @@ fr:
     <p>Voici un exemple d'un champ CSV contenant des virgules et des doubles quotes :</p>
     <code>\"Code style \"\"poor\"\", but the intention was there.\"</code>"
 
-    criterion_name: "Nom du critère"
+    criteria:
+      title:          "Critères"
+      name:           "Nom du critère"
+      type:           "Type de critère."
+      rubric:         "Rubrique"
+      flexible:       "Flexible"
+      checkbox:       "Checkbox"
+      marking_scheme: "Barème: %{identifier}"
+      save:           "Sauvegarder les modifications"
+      add_criterion:  "Ajouter Critère"
+      move_up:        "Monter"
+      move_down:      "Descendre"
+      download:
+        title:    "Télécharger"
+        file:     "Télécharger le fichier de Critères"
+        prompt:   "Tous les types de critères seront téléchargés au format YAML."
+        link_yml: "Télécharger critères au format YAML"
+        yml:      "Télécharger YML"
+      upload:
+        yml:             "Envoyer YML"
+        yml_title:       "Envoyer le fichier XML"
+        yml_prompt:      "Choisissez un fichier YML à envoyer"
+        success:         "Le fichier contenant le barème a bien été envoyé : %{num_loaded}."
+        error:
+          invalid_format: "Les critères suivants a un format non valide:"
+          names_taken:    "Les noms des critères suivants sont déjà prises:"
+        empty_error:     "Aucun critère n'a été trouvé dans le fichier fourni."
+        syntax_error:    "Il y a une erreur dans le fichier que vous avez téléchargé: %{error}"
+        format_yml_html: "
+          <ul>
+            <li><p>Le fichier doit avoir le format suivant pour un critère rubrique: <br>
+              <code>criterion_name:<br>
+                &nbsp;&nbsp;max_mark: max_mark<br>
+                &nbsp;&nbsp;level_0:<br>
+                &nbsp;&nbsp;&nbsp;&nbsp;name: level_name<br>
+                &nbsp;&nbsp;&nbsp;&nbsp;description: level_description<br>
+                &nbsp;&nbsp;level_1:<br>
+                &nbsp;&nbsp;&nbsp;&nbsp;[...]<br>
+                &nbsp;&nbsp;ta_visible: true<br>
+                &nbsp;&nbsp;peer_visible: false<br></code>
+                <p>Les options de visibilité sont en option.</p>
+            </p></li>
+            <li><p>Ci-dessous un critère souple:</p>
+              <code>criterion_name:<br>
+                &nbsp;&nbsp;type: flexible<br>
+                &nbsp;&nbsp;max_mark: max_mark<br>
+                &nbsp;&nbsp;description: description<br>
+                &nbsp;&nbsp;ta_visible: true<br>
+                &nbsp;&nbsp;peer_visible: false<br></code>
+              <p>La description et la visibilité options sont facultatives.</p></li>
+            <li><p>Pour un critère de case à cocher et ce qui suit:</p>
+              <code>criterion_name:<br>
+              &nbsp;&nbsp;type: checkbox<br>
+              &nbsp;&nbsp;max_mark: max_mark<br>
+              &nbsp;&nbsp;description: description<br>
+              &nbsp;&nbsp;ta_visible: true<br>
+              &nbsp;&nbsp;peer_visible: false<br></code>
+            <p>La description et la visibilité options sont facultatives.</p></li>
+          </ul>"
+      errors:
+        messages:
+          name_taken:             "Nom du critère déjà utilisé."
+          assignment_association: "Association est pas forte avec une mission."
+          assignment_id:          "Ne peut être un nombre entier supérieur à 0."
+          input_number:           "Doit être un nombre supérieur à 0.0."
+      ta_visible:       "Rendre visible aux assistants d'enseignement"
+      peer_visible:     "Rendre visible à leurs auteurs pairs"
+      visibility_error: "Sélectionnez au moins une case dans la section de visibilité"
 
     flexible_criteria:
-      criteria_management: "Édition du barème pour le projet %{identifier}"
-      save: "Sauvegarder"
-      move_up: "Monter"
-      move_down: "Descendre"
+      title: "Critères souples"
       name: "Nom du critère"
-      max: "Note maximale"
+      max_mark: "Note maximale"
       description: "Description"
       description_hint: "Vous avez la possibilité d'utiliser des tags HTML simples dans ce champ. Pour un aperçu, sauvegardez."
       download:
@@ -1079,16 +1179,35 @@ fr:
         <p>La description est facultative. NB : Si aucune description n'est présente, la seconde virgule ne doit
         pas apparaître.</p>"
         success: "Le fichier contenant le barème (flexible) a bien été envoyé : %{nb_updates} mise(s) à jour."
-      errors:
-        messages:
-          name_taken: "Nom du critère déjà utilisé."
+      move_criterion:
+        error: "Erreur: impossible de déplacer ce critère (flexible)."
+
+    checkbox_criteria:
+      title: "Critères d' Checkbox"
+      name: "Nom du critère"
+      max_mark: "Note maximale"
+      description: "Description"
+      description_hint: "Vous avez la possibilité d'utiliser des tags HTML simples dans ce champ. Pour un aperçu, sauvegardez."
+      download:
+        title: "Télécharger le fichier de barème"
+        prompt: "Critères de Checkbox sont actuellement disponibles au format CSV"
+        link: "Télécharger critères Checkbox au format CSV"
+      upload:
+        title: "Télécharger Checkbox Critères Fichier"
+        prompt: "Choisissez un fichier CSV à envoyer"
+        format_html: "
+        <p>Le fichier devra être au format suivant : </p>
+        <ul><li>un critère par ligne.</li><li>chaque ligne devra être terminée par un retour chariot.</li></ul>
+        <code>criteria_name,max_value,description</code>
+        <p>La description est facultative. NB : Si aucune description n'est présente, la seconde virgule ne doit
+        pas apparaître.</p>"
+        success: "critères de Checkbox téléchargés avec succès: %{nb_updates} mise à jour."
+      move_criterion:
+        error: "Impossible de déplacer les critères de case à cocher."
 
     rubric_criteria:
-      criteria_management: "Édition du barème pour le projet %{identifier}"
-      save: "Sauvegarder"
+      title: "Critères rubrique"
       name: "Nom du critère"
-      move_up: "Monter"
-      move_down: "Descendre"
       level:
         levels: "Niveaux"
         level_index: "Niveau %{index}"
@@ -1100,11 +1219,7 @@ fr:
       upload:
         csv:       "Envoyer CSV"
         csv_title: "Envoyer un fichier de barème (rubrique) CSV"
-        yml:       "Envoyer YML"
-        yml_title: "Envoyer un fichier de barème (rubrique) YML"
         csv_prompt: "Choisissez un fichier CSV à envoyer"
-        yml_prompt: "Choisissez un fichier YML à envoyer"
-        success: "Le fichier contenant le barème (rubrique) a bien été envoyé : %{nb_updates} mise(s) à jour."
         format_csv_html: "
         <p>Le fichier devra être au format suivant : </p>
         <ul><li>un critère par ligne.</li><li>chaque ligne devra être terminée par un retour chariot.</li></ul>
@@ -1112,17 +1227,6 @@ fr:
         <p>où <em>level_names</em> doit contenir le nom de chaque niveau (séparé par des virgules (,)<br>
         et <em>level_descriptions</em> doi contenir la description de chaque niveau (optionnel,
         séparé aussi par les virgules)."
-        format_yml_html: "
-          <p>Le fichier devra être au format suivant : br>
-              <code>criterion_name:<br>
-                    &nbsp;&nbsp;weight: weight<br>
-                    &nbsp;&nbsp;level_0:<br>
-                    &nbsp;&nbsp;&nbsp;&nbsp;name: level_name<br>
-                    &nbsp;&nbsp;&nbsp;&nbsp;description: level_description<br>
-                    &nbsp;&nbsp;level_1:<br>
-                    &nbsp;&nbsp;&nbsp;&nbsp;[...]</code>
-          </p>"
-      error_total: "total weight must be positive"
       defaults:
         level_0: "Très insuffisant"
         level_1: "Insuffisant"
@@ -1134,18 +1238,13 @@ fr:
         description_2: "Ce critère a été partiellement compris."
         description_3: "Ce critère a été compris."
         description_4: "Ce critère a été parfaitement compris."
-      errors:
-        messages:
-          name_taken: "Nom du critère déjà utilisé."
+      move_criterion:
+        error: "Erreur: impossible de déplacer cette rubric."
 
 
     summary_table:
       title: "Titre"
-      max_value: "Valeur maximale"
       grade: "Note intermédiaire"
-      mark: "Note"
-      weight: "Coefficient"
-      test_script_title: "Scripts de test"
 
     course_summaries:
       title: "Sommaire"
@@ -1195,32 +1294,37 @@ fr:
         update:
             success: "Remarque mise à jour."
 
-    add_criterion:                "Ajouter un critère"
     criteria_edit_total_mark:     "Ce critère sera noté sur %{criterion_total_mark}."
     criterion_saved_success:   "Le critète a été sauvegardé."
     criterion_deleted_success:  "Le critère et toutes les notes associées ont été supprimés."
-    criteria:           "Critères"
     criterion:          "Critère"
     total_mark:         "Note totale"
-    weight:             "Coefficient"
+    visibility:         "Visibilité"
     editing_criteria:   "Édition des critères"
     ordering_criteria:  "Ordonner les critères"
+    modifying_visibility: "Visibilité Modification"
     remove_criteria_title:  "Supprimer ce critère"
     remove_criteria_message:  "Êtes-vous sûr de vouloir supprimer ce critère ?"
+    help_editing_criteria_message: "
+      Sélectionner un critère sur la gauche pour l'éditer. Changements pour les
+      différents critères peuvent être effectués comme suit:"
     help_editing_rubric_criteria_message: "
-      Sélectionner un critère sur la gauche pour l'éditer. La description du
-      critère, son nom et la note maximale peuvent être changés. Le coefficent
-      peut aussi être changé. Pour mettre un coefficient décimal, il
-      suffit d'entrer un nombre décimal dans le champ prévu.
-      Les niveaux des critères ne peuvent pas être changés. Cependant, si
-      aucune description n'est indiquée pour un niveau, il ne sera pas utilisé."
+      Les noms des critères, en-têtes de niveau, les descriptions et la visibilité
+      peuvent être modifiés. Le poids qui correspond à la note maximale indiquée
+      pour chaque critère peut également être modifié. Le coefficent peut aussi
+      être changé. Pour mettre un coefficient décimal, il suffit d'entrer un nombre
+      décimal dans le champ prévu. Les niveaux des critères ne peuvent pas être
+      changés. Cependant, si aucune description n'est indiquée pour un niveau, il
+      ne sera pas utilisé."
     help_ordering_criteria_message: "
   Les correcteurs verront les critères dans l'ordre où ils sont affichés sur la colonne à gauche.
   Pour changer l'ordre, glissez-déposez les critères à votre convenance
   dans la liste."
+    help_modifying_visibility_message: "Les icônes sur la colonne de droite sous la visibilité représentent ce qui suit:"
+    help_ta_visibility_message: "Assistants d'enseignement seront en mesure de voir le critère."
+    help_peer_visibility_message: "Les examinateurs seront en mesure de voir le critère."
     help_editing_flexible_criteria_message: "
-    Sélectionner un critère sur la gauche pour l'éditer. Les nom des critères, leurs descriptions
-    et les notes maximales peuvent être modifiés."
+    Les nom des critères, leurs descriptions, les notes maximales et visibilité peuvent être modifiés."
     past_due_date_warning: "La date de retour de ce projet est passée."
     past_due_date_notice: "La date de retour de ce projet est passée pour : "
 
@@ -1373,6 +1477,7 @@ fr:
       test_run: "L'exécution du test"
       tests_running: "Tests en cours. S'il vous plaît rafraîchir la page pour afficher les résultats."
       need_one_file: "Vous devez avoir au moins un fichier envoyé pour exécuter un test. Si vous avez envoyé un fichier et vous voulez exécuter un test, veuillez cliquer sur \"Récuperer et préparer test\"."
+      need_submission: "Les soumissions doivent être recueillies avant que les tests sont exécutés. Tous les groupes sélectionnés avaient non tests exécutés."
       collect_and_test: "Récupérer et préparer test"
       date_run: "Lancement des tests le :"
       revision_used: "Révision utilisée :"

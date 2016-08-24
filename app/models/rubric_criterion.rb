@@ -3,10 +3,9 @@ require 'encoding'
 class RubricCriterion < Criterion
   self.table_name = 'rubric_criteria' # set table name correctly
 
-  validates_presence_of :weight
-  validates_numericality_of :weight
-  before_save :round_weight
-  validate :validate_total_weight, on: :update
+  validates_presence_of :max_mark
+  validates_numericality_of :max_mark
+  before_save :round_max_mark
 
   after_save :update_existing_results
 
@@ -25,16 +24,27 @@ class RubricCriterion < Criterion
                             only_integer: true,
                             greater_than: 0
 
+  validates_presence_of :max_mark
+  validates_numericality_of :max_mark,
+                            message: I18n.t('criteria.errors.messages.input_number'),
+                            greater_than: 0.0
+
   validates_presence_of :name
   validates_uniqueness_of :name,
                           scope: :assignment_id,
-                          message: I18n.t('rubric_criteria.errors.messages.name_taken')
+                          message: I18n.t('criteria.errors.messages.name_taken')
 
   validates_presence_of :assigned_groups_count
   validates_numericality_of :assigned_groups_count
   before_validation :update_assigned_groups_count
 
   has_many :test_scripts, as: :criterion
+
+  validate :visible?
+
+  def self.symbol
+    :rubric
+  end
 
   def update_assigned_groups_count
     result = []
@@ -44,13 +54,10 @@ class RubricCriterion < Criterion
     self.assigned_groups_count = result.uniq.length
   end
 
-  def validate_total_weight
-    errors.add(:assignment, I18n.t('rubric_criteria.error_total')) if self.assignment.total_mark + (4 * (self.weight - self.weight_was)) <= 0
-  end
-
   # Just a small effort here to remove magic numbers...
   RUBRIC_LEVELS = 5
-  DEFAULT_WEIGHT = 1.0
+  DEFAULT_MAX_MARK = 4
+  MAX_LEVEL = 4
   DEFAULT_LEVELS = [
     {'name' => I18n.t('rubric_criteria.defaults.level_0'),
      'description' => I18n.t('rubric_criteria.defaults.description_0')},
@@ -105,21 +112,29 @@ class RubricCriterion < Criterion
   #               RUBRIC_LEVELS description (one for each level).
   # assignment::  The assignment to which the newly created criterion should belong.
   #
+  # ===Raises:
+  #
+  # CSVInvalidLineError  If the row does not contain enough information, if the weight
+  #                      does not evaluate to a float, or if the criterion is not
+  #                      successfully saved.
   def self.create_or_update_from_csv_row(row, assignment)
     if row.length < RUBRIC_LEVELS + 2
-      raise CSVInvalidLineError
+      raise CSVInvalidLineError, I18n.t('csv.invalid_row.invalid_format')
     end
     working_row = row.clone
     name = working_row.shift
     # If a RubricCriterion of the same name exits, load it up.  Otherwise,
     # create a new one.
-    criterion = assignment.rubric_criteria.find_or_create_by(
-      name: name)
-    #Check that the weight is not a string.
     begin
-      criterion.weight = Float(working_row.shift)
+    criterion = assignment.get_criteria(:all, :rubric).find_or_create_by(name: name)
+    rescue ActiveRecord::RecordNotSaved # Triggered if the assignment does not exist yet
+      raise CSVInvalidLineError, I18n.t('csv.no_assignment')
+    end
+    # Check that the weight is not a string, so that the appropriate max mark can be calculated.
+    begin
+      criterion.max_mark = Float(working_row.shift) * MAX_LEVEL
     rescue ArgumentError
-      raise CSVInvalidLineError
+      raise CSVInvalidLineError, I18n.t('csv.invalid_row.invalid_format')
     end
     # Only set the position if this is a new record.
     if criterion.new_record?
@@ -139,66 +154,75 @@ class RubricCriterion < Criterion
     criterion
   end
 
-  # Instantiate a RubricCriterion from a YML key
+  # Instantiate a RubricCriterion from a YML entry
   #
   # ===Params:
   #
-  # key::      key corresponding to a single RubricCriterion in the
-  #               following format:
-  #               criterion_name:
-  #                 weight: #
-  #                 level_0:
-  #                   name: level_name
-  #                   description: level_description
-  #                 level_1:
-  #                   [...]
-  # assignment::  The assignment to which the newly created criterion should belong.
-  #
-  # ===Raises:
-  #
-  # RuntimeError If there is not enough information, if the weight value
-  #                           is zero (or doesn't evaluate to a float)
-  def self.create_or_update_from_yml_key(key, assignment)
-    name = key[0]
-    # If a RubricCriterion of the same name exits, load it up.  Otherwise,
-    # create a new one.
-    criterion = assignment.rubric_criteria.find_or_create_by(
-      name: name)
-    #Check that the weight is not a string.
+  # criterion_yml:: Information corresponding to a single RubricCriterion
+  #                 in the following format:
+  #                 criterion_name:
+  #                   weight: #
+  #                   level_0:
+  #                     name: level_name
+  #                     description: level_description
+  #                   level_1:
+  #                     [...]
+  def self.load_from_yml(criterion_yml)
+    name = criterion_yml[0]
+    # Create a new RubricCriterion
+    criterion = RubricCriterion.new
+    criterion.name = name
+    # Check max_mark is not a string.
     begin
-      criterion.weight = Float(key[1]['weight'])
+      criterion.max_mark = Float(criterion_yml[1]['max_mark'])
     rescue ArgumentError
-      raise I18n.t('criteria_csv_error.weight_not_number')
+      raise RuntimeError.new(I18n.t('criteria_csv_error.weight_not_number'))
     rescue TypeError
-      raise I18n.t('criteria_csv_error.weight_not_number')
+      raise RuntimeError.new(I18n.t('criteria_csv_error.weight_not_number'))
     rescue NoMethodError
-      raise I18n.t('rubric_criteria.upload.empty_error')
+      raise RuntimeError.new(I18n.t('criteria.upload.empty_error'))
     end
-    # Only set the position if this is a new record.
-    if criterion.new_record?
-      criterion.position = assignment.next_criterion_position
-    end
-    # next comes the level names.
+    # Next comes the level names.
     (0..RUBRIC_LEVELS-1).each do |i|
-      if key[1]['level_' + i.to_s]
-        criterion['level_' + i.to_s + '_name'] = key[1]['level_' + i.to_s]['name']
+      if criterion_yml[1]['level_' + i.to_s]
+        criterion['level_' + i.to_s + '_name'] =
+          criterion_yml[1]['level_' + i.to_s]['name']
         criterion['level_' + i.to_s + '_description'] =
-          key[1]['level_' + i.to_s]['description']
+          criterion_yml[1]['level_' + i.to_s]['description']
       end
     end
-    unless criterion.save
-      raise RuntimeError.new(criterion.errors)
-    end
+    # Visibility options
+    criterion.ta_visible = criterion_yml[1]['ta_visible'] unless criterion_yml[1]['ta_visible'].nil?
+    criterion.peer_visible = criterion_yml[1]['peer_visible'] unless criterion_yml[1]['peer_visible'].nil?
     criterion
   end
 
-  def get_weight
-    self.weight
+  # Returns a hash containing the information of a single rubric criterion.
+  def self.to_yml(criterion)
+    { "#{criterion.name}" =>
+      { 'max_mark'     => criterion.max_mark.to_f,
+        'level_0'      => { 'name'        => criterion.level_0_name,
+                            'description' => criterion.level_0_description },
+        'level_1'      => { 'name'        => criterion.level_1_name,
+                            'description' => criterion.level_1_description },
+        'level_2'      => { 'name'        => criterion.level_2_name,
+                            'description' => criterion.level_2_description },
+        'level_3'      => { 'name'        => criterion.level_3_name,
+                            'description' => criterion.level_3_description },
+        'level_4'      => { 'name'        => criterion.level_4_name,
+                            'description' => criterion.level_4_description },
+        'ta_visible'   => criterion.ta_visible,
+        'peer_visible' => criterion.peer_visible }
+    }
   end
 
-  def round_weight
+  def weight
+    max_mark / 4
+  end
+
+  def round_max_mark
     factor = 10.0 ** 3
-    self.weight = (self.weight * factor).round.to_f / factor
+    self.max_mark = (max_mark * factor).round.to_f / factor
   end
 
   def all_assigned_groups
@@ -247,7 +271,7 @@ class RubricCriterion < Criterion
 
   def add_tas_by_user_name_array(ta_user_name_array)
     result = ta_user_name_array.map do |ta_user_name|
-      Ta.where(user_name: ta_user_name).first
+      Ta.find_by(user_name: ta_user_name)
     end.compact
     add_tas(result)
   end
@@ -255,6 +279,24 @@ class RubricCriterion < Criterion
   # Updates results already entered with new criteria
   def update_existing_results
     self.assignment.submissions.each { |submission| submission.get_latest_result.update_total_mark }
+  end
+
+  # Checks if the criterion is visible to either the ta or the peer reviewer.
+  def visible?
+    unless ta_visible || peer_visible
+        errors.add(:ta_visible, I18n.t('criteria.visibility_error'))
+        false
+    end
+    true
+  end
+
+  def set_mark_by_criterion(mark_to_change, mark_value)
+    if mark_value == 'nil'
+      mark_to_change.mark = nil
+    else
+      mark_to_change.mark = mark_value.to_f * weight
+    end
+    mark_to_change.save
   end
 
 end

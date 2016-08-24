@@ -3,8 +3,6 @@ require 'zip'
 class SubmissionsController < ApplicationController
   include SubmissionsHelper
 
-  helper_method :all_assignments_marked?
-
   before_filter :authorize_only_for_admin,
                 except: [:server_time,
                          :populate_file_manager_react,
@@ -13,19 +11,16 @@ class SubmissionsController < ApplicationController
                          :update_files,
                          :download,
                          :downloads,
-                         :collect_and_begin_grading,
                          :download_groupings_files,
                          :check_collect_status,
                          :manually_collect_and_begin_grading,
-                         :collect_ta_submissions,
                          :repo_browser,
                          :update_submissions,
-                         :populate_submissions_table]
+                         :populate_submissions_table,
+                         :populate_peer_submissions_table]
   before_filter :authorize_for_ta_and_admin,
                 only: [:browse,
-                       :collect_and_begin_grading,
                        :manually_collect_and_begin_grading,
-                       :collect_ta_submissions,
                        :repo_browser,
                        :download_groupings_files,
                        :check_collect_status,
@@ -34,7 +29,8 @@ class SubmissionsController < ApplicationController
   before_filter :authorize_for_student,
                 only: [:file_manager,
                        :update_files,
-                       :populate_file_manager_react]
+                       :populate_file_manager_react,
+                       :populate_peer_submissions_table]
   before_filter :authorize_for_user, only: [:download, :downloads]
 
   def repo_browser
@@ -172,7 +168,10 @@ class SubmissionsController < ApplicationController
     else
       @revision = repo.get_revision(revision_number.to_i)
     end
-
+    exit_directory = get_exit_directory(@previous_path, @grouping.id,
+                                        revision_number, @revision,
+                                        @assignment.repository_folder,
+                                        'file_manager')
     full_path = File.join(@assignment.repository_folder, @path)
     if @revision.path_exists?(full_path)
       files = @revision.files_at_path(full_path)
@@ -181,55 +180,27 @@ class SubmissionsController < ApplicationController
 
       directories = @revision.directories_at_path(full_path)
       directories_info = get_directories_info(directories, revision_number,
-                                              @path, @grouping.id)
-      render json: files_info + directories_info
+                                              @path, @grouping.id, 'file_manager')
+      render json: exit_directory + files_info + directories_info
     else
-      render json: []
+      render json: exit_directory
     end
   end
 
   def manually_collect_and_begin_grading
     @grouping = Grouping.find(params[:id])
     @revision_number = params[:current_revision_number].to_i
-    apply_late_penalty = params[:apply_late_penalty]
-    submission = SubmissionCollector.instance.manually_collect_submission(
-      @grouping, @revision_number, apply_late_penalty, false)
+    apply_late_penalty = params[:apply_late_penalty].nil? ?
+                         false : params[:apply_late_penalty]
+    SubmissionsJob.perform_now([@grouping],
+                               apply_late_penalty: apply_late_penalty,
+                               revision_number: @revision_number)
+
+    submission = @grouping.reload.current_submission_used
     redirect_to edit_assignment_submission_result_path(
       assignment_id: @grouping.assignment_id,
       submission_id: submission.id,
       id: submission.get_latest_result.id)
-  end
-
-  def collect_and_begin_grading
-    assignment = Assignment.find(params[:assignment_id])
-    grouping = Grouping.find(params[:id])
-
-    if assignment.submission_rule.can_collect_grouping_now?(grouping)
-      # Push grouping to the priority queue
-      SubmissionCollector.instance.push_grouping_to_priority_queue(grouping)
-      flash[:success] = I18n.t('collect_submissions.priority_given')
-    else
-      flash[:error] = I18n.t('browse_submissions.could_not_collect',
-                             group_name: grouping.group.group_name)
-    end
-    redirect_to action:   'browse',
-                id:       assignment.id
-  end
-
-  def collect_all_submissions
-    assignment = Assignment.includes(:groupings).find(params[:assignment_id])
-    if assignment.submission_rule.can_collect_all_now?
-      submission_collector = SubmissionCollector.instance
-      submission_collector.push_groupings_to_queue(assignment.groupings)
-      success =
-          I18n.t('collect_submissions.collection_job_started',
-                 assignment_identifier: assignment.short_identifier)
-      render json: { success: success }
-    else
-      error = I18n.t('collect_submissions.could_not_collect',
-                             assignment_identifier: assignment.short_identifier)
-      render json: { error: error }
-    end
   end
 
   def uncollect_all_submissions
@@ -252,35 +223,40 @@ class SubmissionsController < ApplicationController
       assignment.submission_rule.can_collect_now?(section)
     end
     if partition[0].count > 0
-      submission_collector = SubmissionCollector.instance
-      submission_collector.push_groupings_to_queue(partition[0])
+      @current_job = SubmissionsJob.perform_later(partition[0])
       success = I18n.t('collect_submissions.collection_job_started_for_groups',
                        assignment_identifier: assignment.short_identifier)
     end
     if partition[1].count > 0
       error = I18n.t('collect_submissions.could_not_collect_some',
-                       assignment_identifier: assignment.short_identifier)
+                     assignment_identifier: assignment.short_identifier)
     end
     render json: { success: success, error: error }
   end
 
-  def collect_ta_submissions
-    assignment = Assignment.find(params[:assignment_id])
-    if assignment.submission_rule.can_collect_all_now?
-      groupings = assignment.groupings
-                            .joins(:tas)
-                            .where(users: { id: current_user.id })
-      submission_collector = SubmissionCollector.instance
-      submission_collector.push_groupings_to_queue(groupings)
-      flash[:success] =
-          I18n.t('collect_submissions.collection_job_started',
-                 assignment_identifier: assignment.short_identifier)
-    else
-      flash[:error] = I18n.t('collect_submissions.could_not_collect',
-                             assignment_identifier: assignment.short_identifier)
+  def run_tests
+    if !params.has_key?(:groupings) || params[:groupings].empty?
+      render text: t('results.must_select_a_group'), status: 400
+      return
     end
-    redirect_to action: 'browse',
-                id: assignment.id
+    assignment = Assignment.includes(:groupings).find(params[:assignment_id])
+    groupings = assignment.groupings.find(params[:groupings])
+    partition = groupings.partition &:has_submission?
+    if partition[0].count > 0
+      success = I18n.t('automated_tests.tests_running',
+                       assignment_identifier: assignment.short_identifier)
+      partition[0].each do |g|
+        AutomatedTestsHelper.request_a_test_run(
+          g.id,
+          'submission',
+          current_user,
+          g.current_submission_used.id)
+      end
+    end
+    if partition[1].count > 0
+      error = I18n.t('automated_tests.need_submission')
+    end
+    render json: { success: success, error: error }
   end
 
   # The table of submissions for an assignment and related actions and links.
@@ -357,6 +333,15 @@ class SubmissionsController < ApplicationController
 
   def populate_submissions_table
     assignment = Assignment.find(params[:assignment_id])
+    groupings = Grouping.get_groupings_for_assignment(assignment,
+                                                      current_user)
+
+    render json: get_submissions_table_info(assignment, groupings)
+  end
+
+  def populate_peer_submissions_table
+    assignment_in = Assignment.find(params[:assignment_id])
+    assignment = assignment_in.is_peer_review? ? assignment_in : assignment_in.pr_assignment
     groupings = Grouping.get_groupings_for_assignment(assignment,
                                                       current_user)
 
@@ -590,25 +575,11 @@ class SubmissionsController < ApplicationController
     ## delete the old file if it exists
     File.delete(zip_path) if File.exist?(zip_path)
 
-    grouping_ids = params[:groupings]
-
-    ## if there is no grouping, render a message
-    if grouping_ids.blank?
-      render text: t('student.submission.no_groupings_available')
-      return
-    end
-
-    groupings = Grouping.where(id: grouping_ids)
-      .includes(:group,
-                current_submission_used: {
-                  submission_files: {
-                    submission: { grouping: :group }
-                  }
-                })
+    groupings = Grouping.get_groupings_for_assignment(assignment,
+                                                      current_user)
 
     ## build the zip file
     Zip::File.open(zip_path, Zip::File::CREATE) do |zip_file|
-
       groupings.each do |grouping|
         ## retrieve the submitted files
         submission = grouping.current_submission_used
@@ -620,7 +591,6 @@ class SubmissionsController < ApplicationController
         zip_file.mkdir(sub_folder) unless zip_file.find_entry(sub_folder)
 
         files.each do |file|
-
           ## retrieve the file and print an error on redirect back if there is
           begin
             file_content = file.retrieve_file
@@ -648,21 +618,9 @@ class SubmissionsController < ApplicationController
   # Check the status of collection for all groupings
   ##
   def check_collect_status
-    grouping_ids = params[:groupings]
-
-    ## if there is no grouping, render a message
-    if grouping_ids.blank?
-      render text: t('student.submission.no_groupings_available')
-      return
-    end
-
-    groupings = Grouping.where(id: grouping_ids)
-                        .includes(:group,
-                                  current_submission_used: {
-                                    submission_files: {
-                                      submission: { grouping: :group }
-                                    }
-                                  })
+    assignment = Assignment.find(params[:assignment_id])
+    groupings = Grouping.get_groupings_for_assignment(assignment,
+                                                      current_user)
 
     ## check collection is completed for all groupings
     all_groupings_collected = groupings.all?(&:is_collected?)
@@ -773,14 +731,16 @@ class SubmissionsController < ApplicationController
     release = params[:release_results]
 
     begin
-      changed = set_release_on_results(groupings, release)
+      changed = assignment.is_peer_review? ?
+          set_pr_release_on_results(groupings, release) :
+          set_release_on_results(groupings, release)
 
       if changed > 0
         assignment.update_results_stats
 
         # These flashes don't get rendered. Find another way to display?
-        flash[:success] = I18n.t('results.successfully_changed',
-                                 changed: changed)
+        flash_now(:success, I18n.t('results.successfully_changed',
+                                 changed: changed))
         if release
           MarkusLogger.instance.log(
             'Marks released for assignment' +
@@ -804,7 +764,7 @@ class SubmissionsController < ApplicationController
   def download_simple_csv_report
     assignment = Assignment.find(params[:assignment_id])
     students = Student.all
-    out_of = assignment.total_mark
+    out_of = assignment.max_mark
     file_out = MarkusCSV.generate(students) do |student|
       result = [student.user_name]
       grouping = student.accepted_grouping_for(assignment.id)

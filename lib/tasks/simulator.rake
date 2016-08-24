@@ -75,37 +75,36 @@ namespace :markus do
         assignment.repository_folder = assignment_short_identifier
         assignment.submission_rule = rule
         assignment.invalid_override = false
-        assignment.marking_scheme_type = Assignment::MARKING_SCHEME_TYPE[:rubric]
         assignment.display_grader_names_to_students = false
         assignment.assignment_stat = AssignmentStat.new
         assignment.save!
 
         puts "Creating the Rubric for " + assignment_short_identifier + " ..."
-        weight_1 = rand(5) + 5
-        weight_2 = rand(5) + 5
-        weight_3 = rand(5) + 5
-        weight_4 = rand(5) + 5
-        rubric_criterias = [{
+        max_mark_1 = rand(5) + 5
+        max_mark_2 = rand(5) + 5
+        max_mark_3 = rand(5) + 5
+        max_mark_4 = rand(5) + 5
+        rubric_criteria = [{
             name: "Uses Conditionals",
-            weight: weight_1},
+            max_mark: max_mark_1},
           {name: "Code Clarity",
-            weight: weight_2}, {
+           max_mark: max_mark_2}, {
             name: "Code Is Documented",
-            weight: weight_3},
+            max_mark: max_mark_3},
           {name: "Uses For Loop",
-            weight: weight_4}]
+           max_mark: max_mark_4}]
         default_levels = {level_0_name: "Quite Poor", level_0_description: "This criterion was not satisifed whatsoever", level_1_name: "Satisfactory", level_1_description: "This criterion was satisfied", level_2_name: "Good", level_2_description: "This criterion was satisfied well", level_3_name: "Great", level_3_description: "This criterion was satisfied really well!", level_4_name: "Excellent", level_4_description: "This criterion was satisfied excellently"}
-        rubric_criterias.each do |rubric_criteria|
+        rubric_criteria.each do |rubric_criterion|
           rc = RubricCriterion.create
-          rc.update_attributes(rubric_criteria)
+          rc.update_attributes(rubric_criterion)
           rc.update_attributes(default_levels)
           rc.assignment = assignment
           rc.save!
-          assignment.rubric_criteria << rc
+          assignment.get_criteria << rc
         end
         assignment.save
 
-        puts assignment_short_identifier + " mark is " + assignment.total_mark.to_s
+        puts assignment_short_identifier + " mark is " + assignment.max_mark.to_s
         puts "Finish creating assignment" + assignment_short_identifier + "."
 
         puts "Generating TAs ..."
@@ -210,7 +209,7 @@ namespace :markus do
               result = submission.get_latest_result
               # Create a mark for each criterion and attach to result
               puts "Generating mark ..."
-              assignment.rubric_criteria.each do |criterion|
+              assignment.get_criteria.each do |criterion|
                 # Save a mark for each criterion
                 m = Mark.new()
                 m.markable_type = "RubricCriterion"

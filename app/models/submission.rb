@@ -10,7 +10,12 @@ class Submission < ActiveRecord::Base
   validate :max_number_of_results
   belongs_to :grouping
 
-  has_many   :results, dependent: :destroy
+  has_many   :results, -> { order :created_at },
+             dependent: :destroy
+
+  has_one    :submitted_remark, -> { where.not remark_request_submitted_at: nil },
+             class_name: 'Result'
+
   has_many   :submission_files, dependent: :destroy
   has_many   :annotations, through: :submission_files
   has_many   :test_script_results,
@@ -59,15 +64,19 @@ class Submission < ActiveRecord::Base
 
   # Returns the original result.
   def get_original_result
-    Result.where(submission_id: id).order(:created_at).first
+    non_pr_results.first
   end
 
   def remark_result
-    if remark_request_timestamp.nil? || results.length < 2
+    if remark_request_timestamp.nil? || non_pr_results.length < 2
       nil
     else
-      results.order(:created_at).last
+      non_pr_results.last
     end
+  end
+
+  def non_pr_results
+    results.find_all {|r| !r.is_a_review?}
   end
 
   def remark_result_id
@@ -76,7 +85,7 @@ class Submission < ActiveRecord::Base
 
   # Returns the latest result.
   def get_latest_result
-    if remark_submitted?
+    if !submitted_remark.nil?
       remark_result
     else
       get_original_result
@@ -104,16 +113,12 @@ class Submission < ActiveRecord::Base
       marks_earned = 0
       mark_total = 0
       mark.markable.test_scripts.each do |test_script|
-        res = test_script_results.where(test_script_id: test_script.id).last
+        res = test_script_results.where(test_script_id: test_script.id).first
         marks_earned += res.marks_earned
         mark_total += test_script.max_marks
       end
       if mark_total > 0
-        if mark.markable_type == 'RubricCriterion'
-          mark.mark = (marks_earned.to_f / mark_total.to_f * 4).round()
-        else
-          mark.mark = (marks_earned.to_f / mark_total.to_f * mark.markable.max).round(2)
-        end
+        mark.mark = (marks_earned.to_f / mark_total.to_f * mark.markable.max_mark).round(2)
         mark.save
       end
     end
@@ -181,7 +186,7 @@ class Submission < ActiveRecord::Base
   # Returns whether this submission has a remark request that has been
   # submitted to instructors or TAs.
   def remark_submitted?
-    results.where.not(remark_request_submitted_at: nil).size > 0
+    !submitted_remark.nil?
   end
 
   # Helper methods
@@ -235,6 +240,7 @@ class Submission < ActiveRecord::Base
 
     # populate remark result with old marks
     original_result = get_original_result
+    remark_assignment = remark.submission.grouping.assignment
 
     original_result.extra_marks.each do |extra_mark|
       remark.extra_marks.create(result: remark,
@@ -244,13 +250,13 @@ class Submission < ActiveRecord::Base
                                 markable_type: extra_mark.markable_type)
     end
 
-    original_result.marks.each do |mark|
-      remark.marks.create(result: remark,
-                          created_at: Time.zone.now,
-                          markable_id: mark.markable_id,
-                          mark: mark.mark,
-                          markable_type: mark.markable_type)
+    remark_assignment.get_criteria(:ta).each do |criterion|
+      remark_mark = Mark.where(markable_id: criterion.id, result_id: remark.id)
+      original_mark = Mark.where(markable_id: criterion.id, result_id: original_result.id)
+      remark_mark.first.update!(mark: original_mark.first.mark)
     end
+
+    remark.save
   end
 
   private

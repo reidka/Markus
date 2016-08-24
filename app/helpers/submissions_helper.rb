@@ -9,6 +9,27 @@ module SubmissionsHelper
     end
   end
 
+  def set_pr_release_on_results(groupings, release)
+    changed = 0
+    groupings.each do |grouping|
+      name = grouping.group.group_name
+
+      result_prs = grouping.peer_reviews_to_others
+      results = result_prs.map &:result
+      results.each do |result|
+        result.released_to_students = release
+        unless result.save!
+          raise t('marking_state.result_not_saved', group_name: name)
+        end
+
+        #TODO: no error is thrown, but result.released_to_students is suddenly false
+
+        changed += 1
+      end
+    end
+    changed
+  end
+
   # Release or unrelease the submissions of a set of groupings.
   # TODO: Note that this terminates the first time an error is encountered,
   # and displays an error message to the user, even though some groupings
@@ -44,41 +65,86 @@ module SubmissionsHelper
   end
 
   def get_submissions_table_info(assignment, groupings)
-    parts = groupings.select &:has_submission?
-    results = Result.where(submission_id:
-                             parts.map(&:current_submission_used))
+    if !current_user.is_a_reviewer?(assignment)
+      parts = groupings.select &:has_submission?
+      results = Result.where(submission_id:
+                                 parts.map(&:current_submission_used))
                     .order(:id)
-    groupings.map do |grouping|
+    end
+
+    groupings.map.with_index do |grouping, i|
       g = Hash.new
       begin # if anything raises an error, catch it and log in the object.
-        submission = grouping.current_submission_used
-        if submission.nil?
-          result = nil
-        elsif !submission.remark_submitted?
-          result = (results.select do |r|
-            r.submission_id == submission.id
-          end).first
+        if current_user.is_a_reviewer?(assignment)
+          # "groupings" are the reviewee groupings.
+          # Get the respective reviewee's result from grouping
+          result_pr = current_user.grouping_for(assignment.id).review_for(grouping)
+          result = Result.find(result_pr.result_id)
+
+        elsif assignment.is_peer_review? && !current_user.student?
+          # if an admin is viewing reviews a grouping made
+          result_pr = grouping.peer_reviews_to_others.first
+          if !result_pr.nil?
+            # this means they have atleast one group to review
+            result = Result.find(result_pr.result_id)
+          else
+            # this grouping is not assigned to do any reviews
+            result = nil
+          end
+
         else
-          result = (results.select do |r|
-            r.id == submission.remark_result_id
-          end).first
+          submission = grouping.current_submission_used
+          if submission.nil?
+            result = nil
+          elsif submission.submitted_remark.nil?
+            result = (results.select do |r|
+              r.submission_id == submission.id && !r.is_a_review?
+            end).first
+          else
+            result = submission.remark_result
+          end
         end
-        final_due_date = assignment.submission_rule.get_collection_time(grouping.inviter.section)
+
         g[:name] = grouping.get_group_name
-        g[:id] = grouping.id
-        g[:section] = grouping.section
-        g[:tags] = grouping.tags
-        g[:commit_date] = grouping.last_commit_date
-        g[:has_files] = grouping.has_files_in_submission?
-        g[:late_commit] = grouping.past_due_date?
-        g[:name_url] = get_grouping_name_url(grouping, final_due_date, result)
-        g[:class_name] = get_tr_class(grouping)
-        g[:grace_credits_used] = grouping.grace_period_deduction_single
-        g[:repo_name] = grouping.group.repository_name
-        g[:repo_url] = repo_browser_assignment_submission_path(assignment,
-                                                               grouping)
-        g[:final_grade] = grouping.final_grade(result)
-        g[:state] = grouping.marking_state(result)
+        unless current_user.student?
+          g[:id] = grouping.id
+          g[:repo_name] = grouping.group.repository_name
+          g[:repo_url] = repo_browser_assignment_submission_path(assignment,
+                                                                 grouping)
+          g[:final_grade] = grouping.final_grade(result)
+          g[:tags] = grouping.tags
+          g[:commit_date] = grouping.last_commit_date
+          g[:has_files] = grouping.has_files_in_submission?
+          g[:late_commit] =
+            # TODO: Enable this check for Git backend. See issue #1866.
+            if MarkusConfigurator.markus_config_repository_type == 'git'
+              false
+            else
+              grouping.past_due_date?
+            end
+          g[:grace_credits_used] = grouping.grace_period_deduction_single
+          g[:section] = grouping.section
+        end
+        if assignment.is_peer_review?
+          # create a array of hashes, where each hash represents a reviewee with the reviewee grouping's
+          # name and URL to view marks
+          g[:reviewees] = grouping.peer_reviews_to_others.map do |pr|
+            reviewee_result = pr.result
+            reviewee_grouping = reviewee_result.submission.grouping
+            { reviewee_url: url_for(view_marks_assignment_submission_result_path(
+                                      assignment.parent_assignment,
+                                      reviewee_result.submission,
+                                      reviewee_result,
+                                      reviewer_grouping_id: grouping.id)),
+              reviewee_name: reviewee_grouping.group.group_name }
+          end
+        end
+        g[:name_url] = assignment.is_peer_review? && current_user.is_a_reviewer?(assignment) ?
+            edit_assignment_result_path(assignment.parent_assignment.id, result_pr.result_id) :
+            get_grouping_name_url(grouping, result)
+        g[:class_name] = get_tr_class(grouping, assignment)
+        g[:state] = grouping.marking_state(result, assignment, current_user)
+        g[:anonymous_id] = i + 1
         g[:error] = ''
       rescue => e
         m_logger = MarkusLogger.instance
@@ -96,8 +162,10 @@ module SubmissionsHelper
   # style the table row green or red respectively.
   # Classname will be applied to the table row
   # and actually styled in CSS.
-  def get_tr_class(grouping)
-    if grouping.is_collected?
+  def get_tr_class(grouping, assignment)
+    if assignment.is_peer_review?
+      nil
+    elsif grouping.is_collected?
       'submission_collected'
     elsif grouping.error_collecting
       'submission_error'
@@ -106,54 +174,34 @@ module SubmissionsHelper
     end
   end
 
-  def get_grouping_name_url(grouping, final_due_date, result)
-    assignment = grouping.assignment
-    if grouping.is_collected?
+  def get_grouping_name_url(grouping, result)
+    if !grouping.peer_reviews_to_others.empty? && result.is_a_review?
+      url_for(view_marks_assignment_submission_result_path(
+                  assignment_id: grouping.assignment.parent_assignment.id, submission_id: result.submission.id,
+                  id: result.id, reviewer_grouping_id: grouping.id))
+    elsif grouping.is_collected?
       url_for(edit_assignment_submission_result_path(
-                assignment, grouping, result))
-    elsif grouping.has_submission? ||
-          (grouping.inviter.section.nil? && Time.zone.now > final_due_date) ||
-          assignment.submission_rule.can_collect_grouping_now?(grouping)
-      url_for(collect_and_begin_grading_assignment_submission_path(
-                assignment, grouping))
+                  grouping.assignment, result.submission_id, result))
     else
       ''
     end
   end
 
-  # Collects submissions for all the groupings of the given section and assignment
-  # Return the number of actually collected submissions
-  def collect_submissions_for_section(section_id, assignment, errors)
-    collected = 0
-    begin
-      raise I18n.t('collect_submissions.could_not_find_section') if !Section.exists?(section_id)
-      section = Section.find(section_id)
-
-      # Check collection date
-      unless assignment.submission_rule.can_collect_now?(section)
-        raise I18n.t('collect_submissions.could_not_collect_section',
-          assignment_identifier: assignment.short_identifier,
-          section_name: section.name)
-      end
-
-      # Collect and count submissions for all groupings of this section
-      section_groupings = assignment.section_groupings(section)
-      submission_collector = SubmissionCollector.instance
-      section_groupings.each do |grouping|
-        submission_collector.push_grouping_to_priority_queue(grouping)
-        collected += 1
-      end
-    rescue Exception => e
-      errors.push(e.message)
+  #TODO: Add a route in routes.rb and method mark_peer_review in the peer_reviews controller
+  def get_url_peer(grouping, id)
+    if grouping.is_collected?
+      url_for(controller: 'peer_reviews', action: 'mark_peer_review', peer_review_id: id)
+    else
+      ''
     end
-    collected
   end
 
   def get_repo_browser_table_info(assignment, revision, revision_number, path,
                                   previous_path, grouping_id)
     exit_directory = get_exit_directory(previous_path, grouping_id,
                                         revision_number, revision,
-                                        assignment.repository_folder)
+                                        assignment.repository_folder,
+                                        'repo_browser')
 
     full_path = File.join(assignment.repository_folder, path)
     if revision.path_exists?(full_path)
@@ -163,7 +211,7 @@ module SubmissionsHelper
 
       directories = revision.directories_at_path(full_path)
       directories_info = get_directories_info(directories, revision_number,
-                                              path, grouping_id)
+                                              path, grouping_id, 'repo_browser')
       return exit_directory + files_info + directories_info
     else
       return exit_directory
@@ -171,7 +219,7 @@ module SubmissionsHelper
   end
 
   def get_exit_directory(previous_path, grouping_id, revision_number,
-                         revision, folder)
+                         revision, folder, action)
     full_previous_path = File.join('/', folder, previous_path)
     parent_path_of_prev_dir, prev_dir = File.split(full_previous_path)
 
@@ -179,9 +227,10 @@ module SubmissionsHelper
 
     e = {}
     e[:id] = nil
-    e[:filename] = view_context.link_to '../', action: 'repo_browser',
+    e[:filename] = view_context.image_tag('icons/folder.png') +
+        view_context.link_to( ' ../', action: action,
                                         id: grouping_id, path: previous_path,
-                                        revision_number: revision_number
+                                        revision_number: revision_number)
     e[:last_revised_date] = I18n.l(directories[prev_dir].last_modified_date,
                                    format: :long_date)
     e[:revision_by] = directories[prev_dir].user_id
@@ -207,7 +256,7 @@ module SubmissionsHelper
     end
   end
 
-  def get_directories_info(directories, revision_number, path, grouping_id)
+  def get_directories_info(directories, revision_number, path, grouping_id, action)
     directories.map do |directory_name, directory|
       d = {}
       d[:id] = directory.object_id
@@ -216,7 +265,7 @@ module SubmissionsHelper
           # id: assignment_id and grouping_id: grouping_id
           # like the files info?
           view_context.link_to(" #{directory_name}/",
-                               action: 'repo_browser',
+                               action: action,
                                id: grouping_id,
                                revision_number: revision_number,
                                path: File.join(path, directory_name))
@@ -247,12 +296,5 @@ module SubmissionsHelper
       (submission.remark_result.marking_state ==
          Result::MARKING_STATES[:complete]) &&
         !submission.remark_result.released_to_students
-  end
-
-  # Checks if all the assignments for the current submission are marked.
-  def all_assignments_marked?
-    Assignment.includes(groupings: [:current_submission_used])
-              .find(params[:assignment_id])
-              .groupings.all?(&:marking_completed?)
   end
 end

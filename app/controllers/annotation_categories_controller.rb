@@ -79,6 +79,19 @@ class AnnotationCategoriesController < ApplicationController
     @annotation_text.destroy
   end
 
+  def find_annotation_text
+    @assignment = Assignment.find(params[:assignment_id])
+    string = params[:string]
+    texts_for_current_assignment = AnnotationText.joins(annotation_category: :assignment).
+        where(assignments: {id: @assignment.id})
+    annotation_texts = texts_for_current_assignment.where("content LIKE ?", "#{string}%")
+    if annotation_texts.size == 1
+      render json: "#{annotation_texts.first.content}".html_safe
+    else
+      render json: ''.html_safe
+    end
+  end
+
   # This method handles the drag/drop Annotations sorting
   def update_positions
     unless request.post?

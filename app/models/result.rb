@@ -8,6 +8,8 @@ class Result < ActiveRecord::Base
   belongs_to :submission
   has_many :marks
   has_many :extra_marks
+  has_many :annotations
+  has_many :peer_reviews
 
   after_create :create_marks
   validates_presence_of :marking_state
@@ -52,8 +54,18 @@ class Result < ActiveRecord::Base
   end
 
   # The sum of the marks not including bonuses/deductions
-  def get_subtotal
-    marks.includes(:markable).map(&:get_mark).reduce(0, :+)
+  def get_subtotal(user_visibility = :ta)
+    new_marks = 0
+    unless marks.empty?
+      assignment = submission.grouping.assignment
+      assignment.get_criteria(user_visibility).each do |criterion|
+        mark = marks.find_by(markable: criterion)
+        unless mark.nil?
+          new_marks += mark.mark.to_f
+        end
+      end
+    end
+    new_marks
   end
 
   # The sum of the bonuses and deductions, other than late penalty
@@ -78,14 +90,14 @@ class Result < ActiveRecord::Base
 
   # Point deduction for late penalty
   def get_total_extra_percentage_as_points
-    get_total_extra_percentage * submission.assignment.total_mark / 100
+    (get_total_extra_percentage * submission.assignment.max_mark / 100).round(1)
   end
 
   def get_total_test_script_marks
     total = 0
 
     #find the unique test scripts for this submission
-    test_script_ids = TestScriptResult.select(:test_script_id).where(:grouping_id => submission.grouping_id)
+    test_script_ids = TestScriptResult.select(:test_script_id).where(grouping_id: submission.grouping_id)
 
     #pull out the actual ids from the ActiveRecord objects
     test_script_ids = test_script_ids.map { |script_id_obj| script_id_obj.test_script_id }
@@ -95,7 +107,7 @@ class Result < ActiveRecord::Base
 
     #add the latest result from each of our test scripts
     test_script_ids.each do |test_script_id|
-      test_result = TestScriptResult.where(:test_script_id => test_script_id, :grouping_id => submission.grouping_id).last
+      test_result = TestScriptResult.where(test_script_id: test_script_id, grouping_id: submission.grouping_id).last
       total = total + test_result.marks_earned
     end
     return total
@@ -113,23 +125,47 @@ class Result < ActiveRecord::Base
     self.save
   end
 
+  def is_a_review?
+    !peer_review_id.nil?
+  end
+
+  def is_review_for?(user, assignment)
+    grouping = user.grouping_for(assignment.id)
+    pr = PeerReview.find_by(result_id: self.id)
+    !pr.nil? && submission.grouping == grouping
+  end
+
   private
   # If this record is marked as "partial", ensure that its
   # "released_to_students" value is set to false.
   def unrelease_partial_results
-    if marking_state != MARKING_STATES[:complete]
-      self.released_to_students = false
+    unless is_a_review?
+      if marking_state != MARKING_STATES[:complete]
+        self.released_to_students = false
+      end
     end
     true
   end
 
-  def check_for_nil_marks
-    num_criteria = submission.assignment.rubric_criteria.count +
-                   submission.assignment.flexible_criteria.count
-    # Check that the marking state is incomplete or all marks are entered
-    if (marks.find_by(mark: nil) || marks.count != num_criteria) &&
-       marking_state == Result::MARKING_STATES[:complete]
+  def check_for_nil_marks(user_visibility = :ta)
+    nil_marks = false
 
+    # peer review result is a special case because when saving a pr result
+    # we can't pass in a parameter to the before_save filter, so we need
+    # to manually determine the visibility. If it's a pr result, we know we
+    # want the peer-visible criteria
+    visibility = is_a_review? ? :peer : user_visibility
+
+    criteria = submission.assignment.get_criteria(visibility)
+    # criteria = submission.assignment.get_criteria(user_visibility)
+    criteria.each do |criterion|
+      unless marks.where(markable_id: criterion.id, mark: nil).empty?
+        nil_marks = true
+      end
+    end
+    # Check that the marking state is incomplete or all marks are entered
+    # Count can be greater if criteria with previously filled in mark is switched to be not ta_visible
+    if (nil_marks || marks.count < criteria.count) && marking_state == Result::MARKING_STATES[:complete]
       errors.add(:base, I18n.t('common.criterion_incomplete_error'))
       return false
     end
@@ -138,7 +174,7 @@ class Result < ActiveRecord::Base
 
   def create_marks
     assignment = self.submission.assignment
-    assignment.get_criteria.each do |criterion|
+    assignment.get_criteria(:ta).each do |criterion|
       mark = criterion.marks.create(result_id: id)
     end
     self.update_total_mark

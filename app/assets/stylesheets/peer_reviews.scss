@@ -1,0 +1,27 @@
+@import 'common/core';
+@import 'common/columns';
+@import 'common/assignment_dropdown';
+
+.col-left {
+  width: 40%;
+}
+
+.col-right {
+  width: 50%;
+}
+
+.col-center #icons {
+  left: 45%;
+}
+
+.peer-review-amount-spinner {
+  padding-bottom: 8px;
+}
+
+.peer-review-amount-spinner input {
+  width: 75px;
+}
+
+.white {
+  background-color: #FFFFFF;
+}

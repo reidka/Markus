@@ -10,16 +10,19 @@ class ResultsController < ApplicationController
                          :note_message,
                          :update_remark_request, :cancel_remark_request]
   before_filter :authorize_for_ta_and_admin,
-                only: [:edit, :update_mark, :create, :add_extra_mark,
-                       :next_grouping, :update_overall_comment,
+                only: [:create, :add_extra_mark,
                        :remove_extra_mark,
-                       :toggle_marking_state,
                        :note_message]
   before_filter :authorize_for_user,
-                only: [:codeviewer, :download, :download_zip, :run_tests]
+                only: [:codeviewer, :download, :download_zip, :run_tests,
+                       :view_marks]
   before_filter :authorize_for_student,
-                only: [:view_marks, :update_remark_request,
+                only: [:update_remark_request,
                        :cancel_remark_request]
+  before_filter only: [:edit, :update_mark, :toggle_marking_state,
+                       :update_overall_comment, :next_grouping] do |c|
+                  c.authorize_for_ta_admin_and_reviewer(params[:assignment_id], params[:id])
+                end
   after_filter  :update_remark_request_count,
                 only: [:update_remark_request, :cancel_remark_request,
                        :set_released_to_students]
@@ -35,7 +38,9 @@ class ResultsController < ApplicationController
 
   def edit
     @result = Result.find(params[:id])
-    @assignment = @result.submission.assignment
+    @pr = PeerReview.find_by(result_id: @result.id)
+    @assignment = @result.submission.grouping.assignment
+
     @submission = @result.submission
 
     if @submission.remark_submitted?
@@ -56,26 +61,58 @@ class ResultsController < ApplicationController
     @extra_marks_percentage = @result.extra_marks.percentage
     @marks_map = Hash.new
     @old_marks_map = Hash.new
-    @mark_criteria = @assignment.get_criteria
-    @assignment.get_criteria.each do |criterion|
+
+    if @result.is_a_review?
+      if @current_user.is_reviewer_for?(@assignment.pr_assignment, @result)
+        @mark_criteria = @assignment.get_criteria(:peer)
+      else
+        @mark_criteria = @assignment.pr_assignment.get_criteria(:ta)
+      end
+    else
+      @mark_criteria = @assignment.get_criteria(:ta)
+    end
+
+    @mark_criteria.each do |criterion|
       mark = criterion.marks.find_or_create_by(result_id: @result.id)
-      @marks_map[criterion.id] = mark
+      # NOTE: Due to the way marks were set up, they originally assumed that
+      # there only would ever be unique criterion IDs. Now that we mix them
+      # together, multiple criteria could end up using the same ID due to the
+      # polymorphic nature of criteria. This led to old values getting written
+      # over by other ones with the same criteria ID, so the class String is
+      # used to allow the viewers to differentiate between them.
+      # TODO - An even better idea: create a 'table', or rather hash[key][key]
+      @marks_map[[criterion.class.to_s, criterion.id]] = mark
+
       # Loading up previous results for the case of a remark
       if @old_result
         oldmark = criterion.marks.find_or_create_by(result_id: @old_result.id)
         oldmark.save(validate: false)
-        @old_marks_map[criterion.id] = oldmark
+
+        # See above for reasoning on why two elements are used.
+        @old_marks_map[[criterion.class.to_s, criterion.id]] = oldmark
       end
 
+      Mark.skip_callback(:save, :after, :update_result_mark)
       mark.save(validate: false)
+      Mark.set_callback(:save, :after, :update_result_mark)
     end
 
     @result.update_total_mark
-    groupings = Grouping.get_groupings_for_assignment(@assignment,
+
+    if @current_user.is_reviewer_for?(@assignment.pr_assignment, @result)
+      assignment = @assignment.pr_assignment
+    else
+      assignment = @assignment
+    end
+
+    groupings = Grouping.get_groupings_for_assignment(assignment,
                                                       current_user)
-    # We sort by group name by default
-    groupings = groupings.sort do |a, b|
-      a.group.group_name <=> b.group.group_name
+
+    unless @current_user.is_reviewer_for?(@assignment.pr_assignment, @result)
+      # We sort by group name by default
+      groupings = groupings.sort do |a, b|
+        a.group.group_name <=> b.group.group_name
+      end
     end
 
     current_grouping_index = groupings.index(@grouping)
@@ -136,7 +173,6 @@ class ResultsController < ApplicationController
 
   def run_tests
     grouping_id = params[:grouping_id]
-    # TODO: The submission id is set incorrectly as the grouping_id
     submission_id = Result.find(params[:id]).submission.id
 
     begin
@@ -179,10 +215,22 @@ class ResultsController < ApplicationController
   end
 
   def next_grouping
-    grouping = Grouping.find(params[:id])
+    grouping = Grouping.find(params[:grouping_id])
+    assignment = Assignment.find(params[:assignment_id])
+    result = Result.find(params[:id])
+
     if grouping.has_submission? && grouping.is_collected?
+      if @current_user.is_reviewer_for?(assignment.pr_assignment, result)
+        reviewer = @current_user.grouping_for(assignment.pr_assignment.id)
+        next_pr = reviewer.review_for(grouping)
+        next_result = Result.find(next_pr.result_id)
+
+        redirect_to action: 'edit',
+                    id: next_result.id
+      else
         redirect_to action: 'edit',
                     id: grouping.current_submission_used.get_latest_result.id
+      end
     else
       redirect_to controller: 'submissions',
                   action: 'browse'
@@ -198,7 +246,10 @@ class ResultsController < ApplicationController
       @old_result.save
     end
     @result.released_to_students = released_to_students
-    @result.save
+    if @result.save
+      @result.submission.assignment.assignment_stat.refresh_grade_distribution
+      @result.submission.assignment.update_results_stats
+    end
     m_logger = MarkusLogger.instance
     assignment = @result.submission.assignment
     if params[:value] == 'true'
@@ -237,7 +288,11 @@ class ResultsController < ApplicationController
       return
     end
     #Ensure student doesn't download a file not submitted by his own grouping
-    unless authorized_to_download?(file_id: params[:select_file_id])
+
+    unless authorized_to_download?(file_id: params[:select_file_id],
+                                   assignment_id: params[:assignment_id],
+                                   result_id: params[:id],
+                                   from_codeviewer: params[:from_codeviewer])
       render 'shared/http_status', formats: [:html],
              locals: { code: '404',
                           message: HttpStatusHelper::ERROR_CODE[
@@ -274,7 +329,10 @@ class ResultsController < ApplicationController
   def download_zip
 
     #Ensure student doesn't download files not submitted by his own grouping
-    unless authorized_to_download?(submission_id: params[:submission_id])
+    unless authorized_to_download?(submission_id: params[:submission_id],
+                                   assignment_id: params[:assignment_id],
+                                   result_id: params[:id],
+                                   from_codeviewer: params[:from_codeviewer])
       render 'shared/http_status', formats: [:html],
              locals: { code: '404',
                           message: HttpStatusHelper::ERROR_CODE[
@@ -334,13 +392,16 @@ class ResultsController < ApplicationController
     @assignment = Assignment.find(params[:assignment_id])
     @submission_file_id = params[:submission_file_id]
     @focus_line = params[:focus_line]
-
+    @grouping = @current_user.grouping_for(Integer(params[:assignment_id]))
     @file = SubmissionFile.find(@submission_file_id)
-    @result = @file.submission.get_latest_result
-    # Is the current user a student?
+    @result = Result.find(params[:id])
+
+    #Is the current user a student?
     if current_user.student?
-      # The Student does not have access to this file. Display an error.
-      if @file.submission.grouping.membership_status(current_user).nil?
+      # Unless this file belongs to this user or this user is a reviewer of this result,
+      # this student isn't authorized to view these files. Display an error
+      unless (!@grouping.membership_status(current_user).nil?) ||
+          current_user.is_reviewer_for?(@assignment.pr_assignment, @result)
         flash_message(:error, t('submission_file.error.no_access',
                                 submission_file_id: @submission_file_id))
         redirect_to :back
@@ -348,9 +409,9 @@ class ResultsController < ApplicationController
       end
     end
 
-    @annots = @file.annotations
-    @all_annots = @file.submission.annotations
-
+    @annots = @file.annotations.select{|a| a.result_id == @result.id}
+    @all_annots = @file.submission.annotations.select{|a| a.result_id == @result.id}
+    
     begin
       @file_contents = @file.retrieve_file
     rescue Exception => e
@@ -365,11 +426,22 @@ class ResultsController < ApplicationController
 
   def update_mark
     result_mark = Mark.find(params[:mark_id])
-    result_mark.mark = params[:mark]
     submission = result_mark.result.submission  # get submission for logging
     group = submission.grouping.group           # get group for logging
     assignment = submission.grouping.assignment # get assignment for logging
     m_logger = MarkusLogger.instance
+
+    # Update mark attribute in marks table with a weighted mark
+    weight_criterion = result_mark.markable.weight
+    mark_value = params[:mark].to_f
+
+    # If it's a checkbox then we will flip the value since the user requested
+    # it to be toggled.
+    if result_mark.markable.is_a?(CheckboxCriterion)
+      mark_value = params[:radio_type] == 'yes' ? 1.0 : 0.0
+    end
+
+    result_mark.mark = mark_value * weight_criterion
 
     if result_mark.save
       m_logger.log("User '#{current_user.user_name}' updated mark for " +
@@ -377,7 +449,7 @@ class ResultsController < ApplicationController
                    "assignment #{assignment.short_identifier} for " +
                    "group #{group.group_name}.",
                    MarkusLogger::INFO)
-      render text: "#{result_mark.get_mark}," +
+      render text: "#{result_mark.mark.to_f}," +
                    "#{result_mark.result.get_subtotal}," +
                    "#{result_mark.result.total_mark}"
     else
@@ -393,7 +465,24 @@ class ResultsController < ApplicationController
 
   def view_marks
     @assignment = Assignment.find(params[:assignment_id])
-    @grouping = current_user.accepted_grouping_for(@assignment.id)
+
+    if current_user.student?
+      @grouping = current_user.accepted_grouping_for(@assignment.id)
+      @submission = @grouping.current_submission_used
+      result_from_id = Result.find(params[:id])
+      if result_from_id.is_a_review?
+        @result = result_from_id
+      else
+        @result = @submission.get_original_result
+      end
+    else
+      @result = Result.find(params[:id])
+      @submission = @result.submission
+      @grouping = @submission.grouping
+    end
+
+    is_review = @result.is_review_for?(@current_user, @assignment) ||
+        @result.is_a_review?
 
     if @grouping.nil?
       redirect_to controller: 'assignments',
@@ -401,19 +490,32 @@ class ResultsController < ApplicationController
                   id: params[:id]
       return
     end
-    unless @grouping.has_submission?
+
+    unless is_review || @grouping.has_submission?
       render 'results/student/no_submission'
       return
     end
-    @submission = @grouping.current_submission_used
-    unless @submission.has_result?
+
+    if is_review
+      if @current_user.student?
+        @prs = @grouping.peer_reviews.where(results: { released_to_students: true })
+      else
+        @reviewer = Grouping.find(params[:reviewer_grouping_id])
+        @prs = @reviewer.peer_reviews_to_others
+      end
+
+      @current_pr = PeerReview.find_by(result_id: @result.id)
+      @current_pr_result = @current_pr.result
+      @current_group_name = @current_pr_result.submission.grouping.group.group_name
+    end
+
+    unless is_review || @submission.has_result?
       render 'results/student/no_result'
       return
     end
 
-    @result = @submission.get_original_result
     @old_result = nil
-    if @submission.remark_submitted?
+    if @submission.remark_submitted? && !is_review
       @old_result = @result
       @result = @submission.remark_result
       # Check if remark request has been submitted but not released yet
@@ -423,7 +525,7 @@ class ResultsController < ApplicationController
       end
     end
 
-    unless @result.released_to_students
+    unless @result.released_to_students || is_review
       render 'results/student/no_result'
       return
     end
@@ -439,16 +541,29 @@ class ResultsController < ApplicationController
     @extra_marks_percentage = @result.extra_marks.percentage
     @marks_map = Hash.new
     @old_marks_map = Hash.new
-    @mark_criteria = @assignment.get_criteria
-    @assignment.get_criteria.each do |criterion|
+
+    if @result.is_a_review?
+      if @current_user.is_reviewer_for?(@assignment.pr_assignment, @result) ||
+          !@grouping.membership_status(current_user).nil? || !@current_user.student?
+        @mark_criteria = @assignment.get_criteria(:peer)
+      end
+    else
+      @mark_criteria = @assignment.get_criteria(:ta)
+    end
+
+    @mark_criteria.each do |criterion|
       mark = criterion.marks.find_or_create_by(result_id: @result.id)
       mark.save(validate: false)
-      @marks_map[criterion.id] = mark
+
+      # See the 'edit' method documentation for reasoning on why two elements are used.
+      @marks_map[[criterion.class.to_s, criterion.id]] = mark
 
       if @old_result
         oldmark = criterion.marks.find_or_create_by(result_id: @old_result.id)
         oldmark.save(validate: false)
-        @old_marks_map[criterion.id] = oldmark
+
+        # See the 'edit' method documentation for reasoning on why two elements are used.
+        @old_marks_map[[criterion.class.to_s, criterion.id]] = oldmark
       end
     end
 
@@ -550,6 +665,15 @@ class ResultsController < ApplicationController
     if current_user.admin? || current_user.ta?
       return true
     end
+
+    assignment = Assignment.find(map[:assignment_id])
+    result = Result.find(map[:result_id])
+
+    if current_user.is_reviewer_for?(assignment.pr_assignment, result) &&
+        map[:from_codeviewer] != nil
+      return true
+    end
+
     submission = if map[:file_id]
                    sub_file = SubmissionFile.find_by_id(map[:file_id])
                    sub_file.submission unless sub_file.nil?

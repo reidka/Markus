@@ -1,9 +1,7 @@
 require 'encoding'
 
-# Represents a flexible criterion used to mark an assignment that
-# has the marking_scheme_type attribute set to 'flexible'.
+# Represents a flexible criterion used to mark an assignment.
 class FlexibleCriterion < Criterion
-
   self.table_name = 'flexible_criteria' # set table name correctly
 
   has_many :marks, as: :markable, dependent: :destroy
@@ -17,25 +15,31 @@ class FlexibleCriterion < Criterion
   validates_presence_of :name
   validates_uniqueness_of :name,
                           scope: :assignment_id,
-                          message: I18n.t('flexible_criteria.errors.messages.name_taken')
+                          message: I18n.t('criteria.errors.messages.name_taken')
 
   belongs_to :assignment, counter_cache: true
   validates_presence_of :assignment_id
   validates_associated :assignment,
-                       message: 'association is not strong with an assignment'
+                       message: I18n.t('criteria.errors.messages.assignment_association')
   validates_numericality_of :assignment_id,
                             only_integer: true,
                             greater_than: 0,
-                            message: 'can only be whole number greater than 0'
+                            message: I18n.t('criteria.errors.messages.assignment_id')
 
-  validates_presence_of :max
-  validates_numericality_of :max,
-                            message: 'must be a number greater than 0.0',
-                            greater_than: 0.0
+  validates_presence_of :max_mark
+  validates_numericality_of :max_mark,
+                            greater_than: 0.0,
+                            message: I18n.t('criteria.errors.messages.input_number')
 
   has_many :test_scripts, as: :criterion
 
-  DEFAULT_MAX = 1
+  validate :visible?
+
+  DEFAULT_MAX_MARK = 1
+
+  def self.symbol
+    :flexible
+  end
 
   def update_assigned_groups_count
     result = []
@@ -51,58 +55,96 @@ class FlexibleCriterion < Criterion
   # ===Params:
   #
   # row::         An array representing one CSV file row. Should be in the following
-  #               format: [name, max, description] where description is optional.
+  #               format: [name, max_mark, description] where description is optional.
   # assignment::  The assignment to which the newly created criterion should belong.
   #
   # ===Raises:
   #
-  # CSV::MalformedCSVError::  If the row does not contains enough information, if the max value
-  #                           is zero (or doesn't evaluate to a float) or if the
-  #                           supplied name is not unique.
-  def self.new_from_csv_row(row, assignment)
+  # CSVInvalidLineError  If the row does not contain enough information,
+  #                      if the maximum mark is zero, nil or does not evaluate to a
+  #                      float, or if the criterion is not successfully saved.
+  def self.create_or_update_from_csv_row(row, assignment)
     if row.length < 2
       raise CSVInvalidLineError, I18n.t('csv.invalid_row.invalid_format')
     end
-    criterion = FlexibleCriterion.new
-    criterion.assignment = assignment
-    criterion.name = row[0]
-    # assert that no other criterion uses the same name for the same assignment.
-    unless FlexibleCriterion.where(assignment_id: assignment.id,
-                                   name: row[0]).size.zero?
-      raise CSVInvalidLineError, I18n.t('csv.invalid_row.duplicate_entry')
+    working_row = row.clone
+    name = working_row.shift
+    # If a FlexibleCriterion with the same name exits, load it up.  Otherwise,
+    # create a new one.
+    begin
+      criterion = assignment.get_criteria(:all, :flexible).find_or_create_by(name: name)
+    rescue ActiveRecord::RecordNotSaved # Triggered if the assignment does not exist yet
+      raise CSVInvalidLineError, I18n.t('csv.no_assignment')
     end
-
-    criterion.max = row[1]
-    if criterion.max.nil? or criterion.max.zero?
+    # Check that max is not a string.
+    begin
+      criterion.max_mark = Float(working_row.shift)
+    rescue ArgumentError
       raise CSVInvalidLineError, I18n.t('csv.invalid_row.invalid_format')
     end
-
-    criterion.description = row[2] if !row[2].nil?
-    criterion.position = next_criterion_position(assignment)
-
+    # Check that the maximum mark given is a valid number.
+    if criterion.max_mark.nil? or criterion.max_mark.zero?
+      raise CSVInvalidLineError, I18n.t('csv.invalid_row.invalid_format')
+    end
+    # Only set the position if this is a new record.
+    if criterion.new_record?
+      criterion.position = assignment.next_criterion_position
+    end
+    # Set description to the one cloned only if the original description is valid.
+    criterion.description = working_row.shift unless row[2].nil?
     unless criterion.save
-      raise CSV::MalformedCSVError, criterion.errors
+      raise CSVInvalidLineError
     end
     criterion
   end
 
-  # ===Returns:
+  # Instantiate a FlexibleCriterion from a YML entry
   #
-  # The position that should receive the next criterion for an assignment.
-  def self.next_criterion_position(assignment)
-    # TODO temporary, until Assignment gets its criteria method
-    #      nevermind the fact that this computation should really belong in assignment
-    last_criterion = FlexibleCriterion.where(assignment_id: assignment.id)
-                                      .order(:position)
-                                      .last
-    if last_criterion.nil?
-      1
-    else
-      last_criterion.position + 1
+  # ===Params:
+  #
+  # criterion_yml:: Information corresponding to a single FlexibleCriterion
+  #                 in the following format:
+  #                 criterion_name:
+  #                   type: criterion_type
+  #                   max_mark: #
+  #                   description: level_description
+  def self.load_from_yml(criterion_yml)
+    name = criterion_yml[0]
+    # Create a new RubricCriterion
+    criterion = FlexibleCriterion.new
+    criterion.name = name
+    # Check max_mark is not a string.
+    begin
+      criterion.max_mark = Float(criterion_yml[1]['max_mark'])
+    rescue ArgumentError
+      raise RuntimeError.new(I18n.t('criteria_csv_error.weight_not_number'))
+    rescue TypeError
+      raise RuntimeError.new(I18n.t('criteria_csv_error.weight_not_number'))
+    rescue NoMethodError
+      raise RuntimeError.new(I18n.t('criteria.upload.empty_error'))
     end
+    # Set the description to the one given, or to an empty string if
+    # a description is not given.
+    criterion.description =
+      criterion_yml[1]['description'].nil? ? '' : criterion_yml[1]['description']
+    # Visibility options
+    criterion.ta_visible = criterion_yml[1]['ta_visible'] unless criterion_yml[1]['ta_visible'].nil?
+    criterion.peer_visible = criterion_yml[1]['peer_visible'] unless criterion_yml[1]['peer_visible'].nil?
+    criterion
   end
 
-  def get_weight
+  # Returns a hash containing the information of a single flexible criterion.
+  def self.to_yml(criterion)
+    { "#{criterion.name}" =>
+      { 'type'         => 'flexible',
+        'max_mark'     => criterion.max_mark.to_f,
+        'description'  => criterion.description.blank? ? '' : criterion.description,
+        'ta_visible'   => criterion.ta_visible,
+        'peer_visible' => criterion.peer_visible }
+    }
+  end
+
+  def weight
     1
   end
 
@@ -150,9 +192,27 @@ class FlexibleCriterion < Criterion
 
   def add_tas_by_user_name_array(ta_user_name_array)
     result = ta_user_name_array.map do |ta_user_name|
-      Ta.where(user_name: ta_user_name).first
+      Ta.find_by(user_name: ta_user_name)
     end.compact
     add_tas(result)
+  end
+
+  # Checks if the criterion is visible to either the ta or the peer reviewer.
+  def visible?
+    unless ta_visible || peer_visible
+      errors.add(:ta_visible, I18n.t('criteria.visibility_error'))
+      false
+    end
+    true
+  end
+
+  def set_mark_by_criterion(mark_to_change, mark_value)
+    if mark_value == 'nil'
+      mark_to_change.mark = nil
+    else
+      mark_to_change.mark = mark_value.to_f
+    end
+    mark_to_change.save
   end
 
 end

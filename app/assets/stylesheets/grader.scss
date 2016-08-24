@@ -23,10 +23,33 @@
   max-width: 400px;
   padding: 0.25em 1em;
   position: absolute;
-  white-space: pre-wrap;
   width: auto;
   z-index: 100000;
   word-wrap: break-word;
+}
+
+/* Peer Review Styles */
+
+#peer_reviews {
+  display: block;
+  width: 100%;
+  padding-bottom: 10px;
+}
+
+#peer_review_selector_label {
+  float: left;
+  font-size: 14px;
+  margin-top: 13px !important;
+}
+
+#peer_review_selector {
+  margin-top: 7px;
+  margin-left: 20px;
+}
+
+#original_result_link {
+  margin-left: 20px;
+  font-size: 14px;
 }
 
 
@@ -71,32 +94,6 @@
   }
 }
 
-.file_selector,
-.download_file {
-  background: $light-grey;
-  border: 1px solid #ddd;
-  border-radius: $radius;
-  display: inline-block;
-  padding: 0.5em;
-}
-
-.file_selector {
-  margin-right: 1em;
-
-  @include breakpoint(mobile) {
-    margin-bottom: 1em;
-  }
-
-  select {
-    background: $white;
-  }
-
-  #next_button,
-  #back_button {
-    min-width: 0;
-  }
-}
-
 .nested-submenu > .nested-folder {
     top: 0;
     left: 100%;
@@ -118,14 +115,50 @@
     margin-right: -10px;
 }
 
+
+/* Download Files Modal */
+
+#download_file_selector {
+  border-radius: $radius;
+  display: inline-block;
+  text-align: center;
+  margin-bottom: 10px;
+  margin-top: 10px;
+  line-height: 16.25px;
+}
+
+#download_button {
+  display: inline-block;
+  float: right;
+  margin-top: 8px;
+  margin-left: 10px;
+}
+
+#download_all_files_button {
+  display: block;
+  margin: auto;
+}
+
 .download_file {
   .inline_label {
     margin-left: 0.5em;
   }
+}
 
-  #include_annotations {
-    margin-right: 0.5em;
-  }
+#include_annotations {
+  margin-right: 0.5em;
+  float: left;
+}
+
+#annotations_options {
+  display: block;
+  padding-top: 10px;
+  padding-bottom: 5px;
+  margin-left: 110px;
+}
+
+#download_files_dialog {
+  top: 17% !important;
 }
 
 
@@ -146,7 +179,6 @@
 #testviewer,
 #mark_viewer,
 #summary_viewer,
-#submission_rule_viewer,
 #annotations_summary,
 #remark_request_tab,
 #feedback_file_content {
@@ -223,7 +255,7 @@
 
 /* Annotations menus */
 
-#annotation_menu {
+#annotation_menu, #file_selector_menu, #feedback_file_selector_menu {
   background: #b7d3ec;
   border-radius: $radius $radius 0 0;
   display: table;
@@ -235,14 +267,42 @@
 #new_annotation_button {
   display: table-cell;
   font-weight: 300;
-  margin: 0 0.25em 0 0;
+  margin: 0 2.0em 0 0;
   min-width: 0;
   vertical-align: top;
+  float: left;
 }
 
 #annotation_categories {
   display: table-cell;
+  float: left;
+  padding-top: 7px;
+}
+
+.file_selector {
+  background: $light-grey;
+  border-radius: $radius;
+  display: table-cell;
   vertical-align: top;
+  float: left;
+  line-height: 16.25px;
+}
+
+.file_selector {
+  margin-right: 1em;
+
+  @include breakpoint(mobile) {
+    margin-bottom: 1em;
+  }
+
+  select {
+    background: $white;
+  }
+
+  #next_button,
+  #back_button {
+    min-width: 0;
+  }
 }
 
 li.annotation_category {
@@ -354,36 +414,28 @@ ul.annotation_text_list {
   font-size: 10px;
   list-style: none;
   margin: 0;
-  padding: 0;
+  padding-top: 10px;
   width: 100%;
 
   li {
-    border-bottom: 1px solid #dadada;
+    border-bottom: 1px solid lightgrey;
     border-radius: 0;
     padding: 5px;
     width: 100%;
+    background: $white;
 
-    &:nth-child(odd) {
-      background: $light-grey;
-    }
-
-    &:nth-child(even) {
-      background: $white;
-    }
-
-    .mark_criterion_expand {
-      float: left;
-      font-size: 1.2em;
-      width: 1em;
-    }
-
-    .mark_description {
-      margin-left: 2.5em;
-    }
   }
 
   table tr {
     cursor: pointer;
+  }
+
+  .assigned {
+    border: 3px solid $green;
+  }
+
+  .unassigned {
+    background: $light-grey;
   }
 }
 
@@ -395,10 +447,6 @@ ul.annotation_text_list {
 // /* ================ CRITERION STYLES ============== */
 // #old_summary_criteria_pane {
 //   display: none;
-// }
-
-// .assigned {
-//   border: 4px solid #b7d3ec;
 // }
 
 //   .mark_criterion_title {
@@ -430,14 +478,38 @@ ul.annotation_text_list {
 }
 
 .mark_criterion_level_container {
-  margin-left: 20px;
-  margin-top: 10px;
+  padding-top: 5px;
+  padding-bottom: 5px;
+  padding-left: 30px;
 
   table {
     background: #fff;
     border: 1px solid #dadada;
     border-collapse: collapse;
     padding: 4px;
+    width: 100%
+  }
+
+  td {
+    border-bottom:1px solid #dadada;
+    border-top:1px solid #dadada;
+    font-size: 1.1em;
+    padding: 4px;
+  }
+
+}
+
+.mark_criterion_level_released_container {
+  padding-top: 5px;
+  padding-bottom: 5px;
+  padding-left: 20px;
+
+  table {
+    background: #fff;
+    border: 1px solid #dadada;
+    border-collapse: collapse;
+    padding: 4px;
+    width: 100%
   }
 
   td {
@@ -448,30 +520,296 @@ ul.annotation_text_list {
   }
 }
 
-.rubric_criterion_level {
-  background: $white;
+.editing {
+  background: #f9ffb1;
+  border: 1px dashed #d6de78;
 }
-
-.rubric_criterion_level_old_mark {
-  background: #fdfebc;
-}
-
-.mark_grade_input{
-  font-size: 1em;
-  margin: 1px 1px 4px;
-  min-width: 0;
-  padding: 2px;
-}
-
-  .editing {
-    background: #f9ffb1;
-    border: 1px dashed #d6de78;
-  }
 
 #selected_criterion_name {
   font-weight: bold;
 }
 
+/* Rubric Criterion Styles */
+
+.rubric_criterion {
+
+  &.expanded {
+    .rubric_criterion_level {
+      display: inline-block;
+    }
+  }
+
+  &.not_expanded {
+    .rubric_criterion_level {
+      display: none;
+    }
+
+    .rubric_criterion_level_old_mark {
+      display: inline-block;
+    }
+  }
+
+  .description {
+    width: 82%;
+    float: left;
+  }
+
+  .mark {
+    float: right;
+    font-weight: bold;
+    margin-left: 15px;
+    margin-right: 10px;
+  }
+
+  .rubric_criterion_level {
+    background: $white;
+    width: 100%;
+  }
+
+  .rubric_criterion_level_old_mark {
+    background: #fdfebc;
+    width: 100%;
+  }
+
+  .title_div_level {
+    padding-top: 2px;
+    font-size: 12px;
+    font-weight: bold;
+    padding-bottom: 5px;
+    padding-left: 20px;
+    cursor: pointer;
+  }
+
+  .criterion_expand {
+    float: left;
+    font-size: 1.2em;
+    width: 1em;
+    cursor: pointer;
+    padding-top: 3px;
+  }
+
+  .criterion_link {
+    padding: 0.25em 0em !important;
+  }
+}
+
+.rubric_criterion.assigned + .rubric_criterion.assigned {
+  margin-top: -2px;
+}
+
+/* Flexible Criterion Styles */
+
+.flexible_criterion {
+
+  .criterion_expand {
+    float: left;
+    cursor: pointer;
+    font-size: 1.2em;
+    width: 1em;
+    padding-top: 2px;
+    height: 20px;
+  }
+
+  &.expanded {
+    .criterion_info {
+      display: block;
+    }
+  }
+
+  &.not_expanded {
+    .criterion_info {
+      display: none;
+    }
+  }
+
+  .unexpandable {
+    .criterion_expand {
+      visibility: hidden;
+      cursor: auto !important;
+    }
+
+    .title_div_level {
+      cursor: auto !important;
+    }
+  }
+
+  .criterion_info {
+    padding-left: 26px;
+    padding-bottom: 5px;
+    margin-left: 5px;
+    float: left;
+    clear: both;
+  }
+
+  .title_div_level {
+    font-size: 12px;
+    float: left;
+    padding-right: 10px;
+    font-weight: bold;
+    padding-bottom: 6px;
+
+    &.released {
+      padding-left: 15px;
+    }
+
+    &.unreleased {
+      cursor: pointer;
+    }
+  }
+
+  .mark_flexible {
+    font-weight: bold;
+    font-size: 11px;
+    float: right;
+    padding-right: 14px;
+
+    .mark_grade_input{
+      font-size: 1em;
+      margin: 1px 1px 4px;
+      margin-right: 6px;
+      min-width: 0;
+      padding: 2px;
+    }
+  }
+
+  .old_mark {
+    font-size: 11px;
+    float: right;
+    padding-right: 10px;
+
+    &.old_mark_unreleased {
+      padding-top: 4px;
+    }
+  }
+
+  .mark_grade_input {
+    &.remarked {
+      background-color: #81d881;
+    }
+
+    &.not_remarked:not([disabled]) {
+      background-color: white;
+    }
+  }
+
+}
+
+/* Checkbox Criterion Styles */
+
+.checkbox_criterion {
+
+  .criterion_expand {
+    float: left;
+    cursor: pointer;
+    font-size: 1.2em;
+    width: 1em;
+    padding-top: 2px;
+    height: 20px;
+  }
+
+  &.expanded {
+    .criterion_info {
+      display: block;
+    }
+  }
+
+  &.not_expanded {
+    .criterion_info {
+      display: none;
+    }
+  }
+
+  .unexpandable {
+    .criterion_expand {
+      visibility: hidden;
+      cursor: auto !important;
+    }
+
+    .title_div_level {
+      cursor: auto !important;
+    }
+  }
+
+  .criterion_info {
+    padding-left: 26px;
+    padding-bottom: 5px;
+    margin-left: 5px;
+    float: left;
+    clear: both;
+  }
+
+  .title_div_level {
+    font-size: 12px;
+    float: left;
+    padding-right: 10px;
+    font-weight: bold;
+    padding-bottom: 6px;
+
+    &.released {
+      padding-left: 15px;
+    }
+
+    &.unreleased {
+      cursor: pointer;
+    }
+  }
+
+  .mark_checkbox {
+    font-weight: bold;
+    font-size: 11px;
+    float: right;
+    padding-top: 4px;
+
+    .mark_grade_input_checkbox {
+      font-size: 1em;
+      margin: 1px 1px 4px;
+      min-width: 0;
+      padding: 2px;
+    }
+  }
+
+  .old_mark {
+    font-size: 11px;
+    float: right;
+    padding-right: 10px;
+
+    &.old_mark_unreleased {
+      padding-top: 4px;
+    }
+  }
+
+  .mark_grade_input {
+    &.remarked {
+      background-color: #81d881;
+    }
+
+    &.not_remarked:not([disabled]) {
+      background-color: white;
+    }
+  }
+
+  .checkbox_radio_button_container {
+    padding-left: 8px;
+    padding-right: 16px;
+  }
+}
+
+/* Submission Rule Pane */
+
+.submission_rule_pane {
+  border: 1px solid #dadada;
+  margin-top: 1.5em;
+  margin-bottom: 2em;
+}
+
+.submission_rule_label {
+  background-color: #cee3ea;
+  padding: 3px 3px 3px 3px;
+}
+
+#submission_rule_viewer {
+  padding: 3px 3px 3px 3px;
+}
 
 /* Extra Mark holder */
 
@@ -537,7 +875,7 @@ ul.annotation_text_list {
 
 .extra_marks_pane_list,
 .extra_percentage_pane_list,
-.marks_summary_pane_list {
+.summary_criteria_pane_list {
   margin: 0;
   padding: 0;
   width: 100%;
@@ -546,6 +884,10 @@ ul.annotation_text_list {
     background-color: $light-blue;
     padding: 0.25em;
     text-align: left;
+    width: 83%;
+  }
+  th+th {
+    width: auto;
   }
 
   tr {
@@ -559,6 +901,10 @@ ul.annotation_text_list {
 
     td {
       padding: 0.25em;
+      width: 83%;
+    }
+    td+td {
+      width: auto;
     }
   }
 }
@@ -674,6 +1020,7 @@ ul.annotation_text_list {
   }
 
   #left-pane {
+    width: 60% !important;
     padding-right: 0.5em;
 
     @include breakpoint(small) {
@@ -683,6 +1030,7 @@ ul.annotation_text_list {
   }
 
   #right-pane {
+    width: 39.5% !important;
     padding-left: 0.5em;
 
     @include breakpoint(small) {

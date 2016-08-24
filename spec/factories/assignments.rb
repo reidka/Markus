@@ -12,7 +12,6 @@ FactoryGirl.define do
     group_name_displayed false
     repository_folder { Faker::Lorem.word }
     due_date 1.minute.from_now
-    marking_scheme_type Assignment::MARKING_SCHEME_TYPE[:rubric]
     allow_web_submits true
     display_grader_names_to_students false
     submission_rule { NoLateSubmissionRule.new }
@@ -21,13 +20,24 @@ FactoryGirl.define do
     tokens_per_period 0
     unlimited_tokens false
     enable_test false
+  end
 
-    factory :flexible_assignment do
-      marking_scheme_type Assignment::MARKING_SCHEME_TYPE[:flexible]
-    end
+  factory :assignment_with_peer_review, parent: :assignment do
+    has_peer_review true
+  end
 
-    factory :rubric_assignment do
-      marking_scheme_type Assignment::MARKING_SCHEME_TYPE[:rubric]
+  # This creates an assignment and peer review assignment, and also creates the
+  # necessary groups/submissions/results/etc, such that PeerReview entries can
+  # be created from this using such functions as random assignment.
+  factory :assignment_with_peer_review_and_groupings_results, parent: :assignment_with_peer_review do
+    after(:create) do |assign|
+        students = 6.times.map { (create(:student)) }
+        groupings = 3.times.map { create(:grouping, assignment: assign) }
+        pr_groupings = 3.times.map { create(:grouping, assignment: assign.pr_assignment) }
+        3.times.each { |i| create(:accepted_student_membership, user: students[i], grouping: groupings[i]) }
+        3.times.each { |i| create(:accepted_student_membership, user: students[i+3], grouping: pr_groupings[i]) }
+        submissions = 3.times.map { |i| create(:version_used_submission, grouping: groupings[i]) }
+        3.times.each { |i| create(:result, submission: submissions[i], marking_state: Result::MARKING_STATES[:complete]) }
     end
   end
 end

@@ -47,10 +47,11 @@ describe Assignment do
     it { is_expected.to validate_presence_of(:description) }
     it { is_expected.to validate_presence_of(:repository_folder) }
     it { is_expected.to validate_presence_of(:due_date) }
-    it { is_expected.to validate_presence_of(:marking_scheme_type) }
     it { is_expected.to validate_presence_of(:group_min) }
     it { is_expected.to validate_presence_of(:group_max) }
     it { is_expected.to validate_presence_of(:notes_count) }
+    it { should belong_to(:parent_assignment).class_name('Assignment') }
+    it { should have_one(:pr_assignment).class_name('Assignment') }
     it do
       is_expected.to validate_numericality_of(:group_min).is_greater_than(0)
     end
@@ -65,6 +66,37 @@ describe Assignment do
     it 'should require case sensitive unique value for short_identifier' do
       assignment = create(:assignment)
       expect(assignment).to validate_uniqueness_of(:short_identifier)
+      end
+    it 'should have a nil parent_assignment by default' do
+      assignment = create(:assignment)
+      expect(assignment.parent_assignment).to be_nil
+    end
+    it 'should have a nil peer_review by default' do
+      assignment = create(:assignment)
+      expect(assignment.pr_assignment).to be_nil
+    end
+    it 'should not be a peer review if there is no parent_assignment_id' do
+      assignment = create(:assignment)
+      expect(assignment.parent_assignment_id).to be_nil
+      expect(assignment.is_peer_review?).to be false
+    end
+    it 'should be a peer review if it has a parent_assignement_id' do
+      parent_assignment = create(:assignment)
+      assignment = create(:assignment, parent_assignment: parent_assignment)
+      expect(assignment.is_peer_review?).to be true
+      expect(parent_assignment.is_peer_review?).to be false
+    end
+    it 'should give a true has_peer_review_assignment result if it does' do
+      parent_assignment = create(:assignment)
+      assignment = create(:assignment, parent_assignment: parent_assignment)
+      expect(parent_assignment.has_peer_review_assignment?).to be true
+      expect(assignment.has_peer_review_assignment?).to be false
+    end
+    it 'should find children assignments when they reference the parent' do
+      parent_assignment = create(:assignment)
+      assignment = create(:assignment, parent_assignment: parent_assignment)
+      expect(parent_assignment.pr_assignment.id).to be assignment.id
+      expect(assignment.parent_assignment.id).to be parent_assignment.id
     end
   end
 
@@ -103,6 +135,72 @@ describe Assignment do
         it 'returns the TA' do
           expect(@assignment.tas).to eq [@ta]
         end
+
+        context 'when no criteria are found' do
+          it 'returns an empty list of criteria' do
+            expect(@assignment.get_criteria).to be_empty
+          end
+
+          context 'a submission and result are created' do
+            before do
+              @submission = create(:submission, grouping: @grouping)
+              @result = create(:incomplete_result, submission: @submission)
+            end
+
+            it 'has no marks' do
+              expect(@result.marks.length).to eq(0)
+            end
+
+            it 'gets a subtotal' do
+              expect(@result.get_subtotal).to eq(0)
+            end
+          end
+        end
+
+        context 'when rubric criteria are found' do
+          before do
+            @ta_criteria = Array.new(2) { create(:rubric_criterion, assignment: @assignment) }
+            @peer_criteria = Array.new(2) { create(:rubric_criterion,
+                                                   assignment: @assignment,
+                                                   ta_visible: false,
+                                                   peer_visible: true) }
+            @ta_and_peer_criteria = Array.new(2) { create(:rubric_criterion,
+                                                          assignment: @assignment,
+                                                          peer_visible: true) }
+            end
+
+          it 'shows the criteria visible to tas only' do
+            expect(@assignment.get_criteria(:ta).select(&:id)).to match_array(@ta_criteria.select(&:id) +
+                                                                                  @ta_and_peer_criteria.select(&:id))
+          end
+
+          context 'a submission and a result are created' do
+            before do
+              @submission = create(:submission, grouping: @grouping)
+              @result = create(:incomplete_result, submission: @submission)
+            end
+
+            it 'creates marks for visible criteria only' do
+              expect(@result.marks.length).to eq(4)
+            end
+
+            context 'when marks are entered' do
+              before do
+                result_mark = @result.marks.first
+                result_mark.mark = 2.0
+                result_mark.save
+              end
+
+              it 'gets a subtotal' do
+                expect(@result.get_subtotal).to eq(2)
+              end
+
+              it 'gets a relative max_mark' do
+                expect(@assignment.max_mark).to eq(16)
+              end
+            end
+          end
+        end
       end
 
       describe 'more than one TA' do
@@ -115,38 +213,6 @@ describe Assignment do
         it 'returns all TAs' do
           expect(@assignment.tas).to match_array [@ta, @other_ta]
         end
-      end
-    end
-  end
-
-  describe '#criterion_class' do
-    context 'when the marking_scheme_type is rubric' do
-      before :each do
-        @assignment = build(:assignment, marking_scheme_type: Assignment::MARKING_SCHEME_TYPE[:rubric])
-      end
-
-      it 'returns RubricCriterion' do
-        expect(@assignment.criterion_class).to equal(RubricCriterion)
-      end
-    end
-
-    context 'when the marking_scheme_type is flexible' do
-      before :each do
-        @assignment = build(:assignment, marking_scheme_type: Assignment::MARKING_SCHEME_TYPE[:flexible])
-      end
-
-      it 'returns FlexibleCriterion' do
-        expect(@assignment.criterion_class).to equal(FlexibleCriterion)
-      end
-    end
-
-    context 'when the marking_scheme_type is nil' do
-      before :each do
-        @assignment = build(:assignment, marking_scheme_type: nil)
-      end
-
-      it 'returns nil' do
-        expect(@assignment.criterion_class).to be_nil
       end
     end
   end
@@ -512,7 +578,6 @@ describe Assignment do
   describe '#graded_submission_results' do
     before :each do
       @assignment = create(:assignment)
-      @submission_collector = SubmissionCollector.instance
       @student = create(:student)
       @grouping = create(:grouping, assignment: @assignment, inviter: @student)
       @submission = create(:version_used_submission, grouping: @grouping)
@@ -552,23 +617,6 @@ describe Assignment do
           expect(@assignment.graded_submission_results)
             .to match_array [@result, @other_result]
         end
-      end
-    end
-
-    context 'assignment re-collection' do
-      it 'does calculate submission results properly' do
-        @assignment.due_date = (Time.now - 1.minute)
-        @assignment.save
-        expect(@assignment.submission_rule.can_collect_all_now?).to eq true
-        @submission_collector.push_groupings_to_queue(@assignment.groupings)
-        expect(@assignment.graded_submission_results.size).to_not be_nil
-        first_result = @submission.assignment.graded_submission_results.size
-        # make call to collect_all_submissions again
-        @submission_collector.push_groupings_to_queue(@assignment.groupings)
-        expect(@assignment.graded_submission_results.size).to_not be_nil
-        second_result = @submission.assignment.graded_submission_results.size
-        # first_result should be equal to second_result
-        expect(first_result).to eq(second_result)
       end
     end
   end
@@ -1057,9 +1105,9 @@ describe Assignment do
   end
 
   describe '#get_detailed_csv_report' do
-    context 'when rubric marking was used' do
+    context 'when rubric criteria were used' do
       before :each do
-        @assignment = create(:rubric_assignment)
+        @assignment = create(:assignment)
         create(:assignment_file, filename: 'test1', assignment: @assignment)
         create(:assignment_file, filename: 'test2', assignment: @assignment)
         criteria =
@@ -1084,9 +1132,9 @@ describe Assignment do
           grouping = student.accepted_grouping_for(@assignment.id)
           if grouping && grouping.has_submission?
             result = grouping.current_submission_used.get_latest_result
-            fields.push(result.total_mark / @assignment.total_mark * 100)
+            fields.push(result.total_mark / @assignment.max_mark * 100)
             fields.push(result.total_mark)
-            @assignment.rubric_criteria.each do |criterion|
+            @assignment.get_criteria(:all, :rubric).each do |criterion|
               mark = result.marks
                 .find_by_markable_id_and_markable_type(criterion.id,
                                                        'RubricCriterion')
@@ -1095,14 +1143,14 @@ describe Assignment do
               else
                 fields.push('')
               end
-              fields.push(criterion.weight)
+              fields.push(criterion.max_mark)
             end
             fields.push(result.get_total_extra_points)
             fields.push(result.get_total_extra_percentage)
           else
             fields.push('')
-            @assignment.rubric_criteria.each do |criterion|
-              fields.push('', criterion.weight)
+            @assignment.get_criteria(:all, :rubric).each do |criterion|
+              fields.push('', criterion.max_mark)
             end
             fields.push('', '')
           end
@@ -1117,9 +1165,9 @@ describe Assignment do
       end
     end
 
-    context 'when flexible marking was used' do
+    context 'when flexible criteria were used' do
       before :each do
-        @assignment = create(:flexible_assignment)
+        @assignment = create(:assignment)
         create(:assignment_file, filename: 'test3', assignment: @assignment)
         create(:assignment_file, filename: 'test4', assignment: @assignment)
         criteria =
@@ -1144,9 +1192,9 @@ describe Assignment do
           grouping = student.accepted_grouping_for(@assignment.id)
           if grouping && grouping.has_submission?
             result = grouping.current_submission_used.get_latest_result
-            fields.push(result.total_mark / @assignment.total_mark * 100)
+            fields.push(result.total_mark / @assignment.max_mark * 100)
             fields.push(result.total_mark)
-            @assignment.flexible_criteria.each do |criterion|
+            @assignment.get_criteria(:all, :flexible).each do |criterion|
               mark = result.marks
                 .find_by_markable_id_and_markable_type(criterion.id,
                                                        'FlexibleCriterion')
@@ -1155,14 +1203,14 @@ describe Assignment do
               else
                 fields.push('')
               end
-              fields.push(criterion.max)
+              fields.push(criterion.max_mark)
             end
             fields.push(result.get_total_extra_points)
             fields.push(result.get_total_extra_percentage)
           else
             fields.push('')
-            @assignment.flexible_criteria.each do |criterion|
-              fields.push('', criterion.max)
+            @assignment.get_criteria(:all, :flexible).each do |criterion|
+              fields.push('', criterion.max_mark)
             end
             fields.push('', '')
           end
@@ -1202,7 +1250,7 @@ describe Assignment do
 
   describe '#update_results_stats' do
     before :each do
-      allow(assignment).to receive(:total_mark).and_return(10)
+      allow(assignment).to receive(:max_mark).and_return(10)
     end
 
     context 'when no marks are found' do
@@ -1238,9 +1286,9 @@ describe Assignment do
         expect(assignment.results_median).to eq 25
       end
 
-      context 'when total_mark is 0' do
+      context 'when max_mark is 0' do
         before :each do
-          allow(assignment).to receive(:total_mark).and_return(0)
+          allow(assignment).to receive(:max_mark).and_return(0)
           assignment.update_results_stats
         end
 

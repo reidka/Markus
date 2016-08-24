@@ -184,82 +184,23 @@ describe 'An Assignment' do
   end
   # end Assignment member route tests
 
-  # start Assignment's rubrics route tests
-  context 's rubrics' do
-    let(:rubric_path) { path + '/' + assignment.id.to_s + '/rubrics' }
-    let(:rubric_ctrl) { 'rubrics' }
-
-    # start assignment rubric member route tests
-    context 'member' do
-      it 'routes DELETE destroy properly' do
-        expect(delete: rubric_path + '/1').to route_to(
-          controller: rubric_ctrl,
-          action: 'destroy',
-          id: '1',
-          assignment_id: assignment.id.to_s,
-          locale: 'en')
-      end
-    end
-    # end assignment rubric member route tests
-
-    # start assignment rubric collection route tests
+  # start assignment criteria route tests
+  context 's criteria' do
     context 'collection' do
+      let(:criteria_path) { path + '/' + assignment.id.to_s + '/criteria' }
+      let(:criteria_ctrl) { 'criteria' }
+
       it 'routes POST update_positions properly' do
-        expect(post: rubric_path + '/update_positions').to route_to(
-          controller: rubric_ctrl,
+        expect(post: criteria_path + '/update_positions').to route_to(
+          controller: criteria_ctrl,
           action: 'update_positions',
-          assignment_id: assignment.id.to_s,
-          locale: 'en')
-      end
-      it 'routes POST csv_upload properly' do
-        expect(post: rubric_path + '/csv_upload').to route_to(
-          controller: rubric_ctrl,
-          action: 'csv_upload',
-          assignment_id: assignment.id.to_s,
-          locale: 'en')
-      end
-      it 'routes POST yml_upload properly' do
-        expect(post: rubric_path + '/yml_upload').to route_to(
-          controller: rubric_ctrl,
-          action: 'yml_upload',
-          assignment_id: assignment.id.to_s,
-          locale: 'en')
-      end
-      it 'routes GET download_csv properly' do
-        expect(get: rubric_path + '/download_csv').to route_to(
-          controller: rubric_ctrl,
-          action: 'download_csv',
-          assignment_id: assignment.id.to_s,
-          locale: 'en')
-      end
-      it 'routes GET download_yml properly' do
-        expect(get: rubric_path + '/download_yml').to route_to(
-          controller: rubric_ctrl,
-          action: 'download_yml',
-          assignment_id: assignment.id.to_s,
-          locale: 'en')
-      end
-    end
-  end
-  # end Assignment's rubrics route tests
-
-  # start assignment flexible criteria route tests
-  context 's flexible_criteria' do
-    context 'collection' do
-      let(:criter_path) { path + '/' + assignment.id.to_s + '/flexible_criteria' }
-      let(:criter_ctrl) { 'flexible_criteria' }
-
-      it 'routes POST upload properly' do
-        expect(post: criter_path + '/upload').to route_to(
-          controller: criter_ctrl,
-          action: 'upload',
           assignment_id: assignment.id.to_s,
           locale: 'en')
       end
 
       it 'routes GET show id: update_positions' do
-        expect(get: criter_path + '/update_positions').to route_to(
-          controller: criter_ctrl,
+        expect(get: criteria_path + '/update_positions').to route_to(
+          controller: criteria_ctrl,
           action: 'show',
           id: 'update_positions',
           assignment_id: assignment.id.to_s,
@@ -267,24 +208,32 @@ describe 'An Assignment' do
       end
 
       it 'routes GET show id: move_criterion' do
-        expect(get: criter_path + '/move_criterion').to route_to(
-          controller: criter_ctrl,
+        expect(get: criteria_path + '/move_criterion').to route_to(
+          controller: criteria_ctrl,
           action: 'show',
           id: 'move_criterion',
           assignment_id: assignment.id.to_s,
           locale: 'en')
       end
 
-      it 'routes GET download properly' do
-        expect(get: criter_path + '/download').to route_to(
-          controller: criter_ctrl,
-          action: 'download',
+      it 'routes GET download_yml properly' do
+        expect(get: criteria_path + '/download_yml').to route_to(
+          controller: criteria_ctrl,
+          action: 'download_yml',
+          assignment_id: assignment.id.to_s,
+          locale: 'en')
+      end
+
+      it 'routes POST yml_upload properly' do
+        expect(post: criteria_path + '/upload_yml').to route_to(
+          controller: criteria_ctrl,
+          action: 'upload_yml',
           assignment_id: assignment.id.to_s,
           locale: 'en')
       end
     end
   end
-  # end assignment flexible criteria route tests
+  # end assignment criteria route tests
 
   # start assignment automated_tests resource route tests
   context 's automated_tests' do
@@ -526,14 +475,6 @@ describe 'An Assignment' do
           locale: 'en')
       end
 
-      it 'routes GET collect_all_submissions properly' do
-        expect(get: sub_path + '/collect_all_submissions').to route_to(
-          controller: sub_ctrl,
-          action: 'collect_all_submissions',
-          assignment_id: assignment.id.to_s,
-          locale: 'en')
-      end
-
       it 'routes GET download_simple_csv_report properly' do
         expect(get: sub_path + '/download_simple_csv_report').to route_to(
           controller: sub_ctrl,
@@ -562,14 +503,6 @@ describe 'An Assignment' do
         expect(get: sub_path + '/download_svn_repo_list').to route_to(
           controller: sub_ctrl,
           action: 'download_svn_repo_list',
-          assignment_id: assignment.id.to_s,
-          locale: 'en')
-      end
-
-      it 'routes GET collect_ta_submissions properly' do
-        expect(get: sub_path + '/collect_ta_submissions').to route_to(
-          controller: sub_ctrl,
-          action: 'collect_ta_submissions',
           assignment_id: assignment.id.to_s,
           locale: 'en')
       end

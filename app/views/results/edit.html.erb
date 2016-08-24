@@ -3,8 +3,10 @@
   <%= stylesheet_link_tag('grader') %>
   <%= stylesheet_link_tag('pdfjs/viewer') %>
 
+  <%= javascript_include_tag 'Results/file_selector' %>
   <%= javascript_include_tag 'panes' %>
   <%= javascript_include_tag 'pdfjs' %>
+
   <%= javascript_tag do -%>
     PDFJS.workerSrc = "<%= @host %>/assets/pdfjs_lib/pdf.worker.js";
   <% end -%>
@@ -35,6 +37,7 @@
 
   jQuery(document).ready(function() {
     window.modalNotesGroup = new ModalMarkus('#notes_dialog');
+    window.modalDownloadFiles = new ModalMarkus('#download_files_dialog');
 
     // Set up the 'working' notices
     jQuery('#working').ajaxStart(function() {
@@ -49,10 +52,14 @@
     // Hide the criterion that AREN'T empty (i.e. are marked)
     // Check if the marks are released, if they are there is nothing to hide
     <% unless @result.released_to_students %>
-      jQuery('.mark_description').each(function() {
-        if (this.innerHTML.trim()) {
-          hide_criterion(parseInt(this.getAttribute('data-id'), 10));
-        }
+      jQuery('.mark_criterion_level_container').each(function() {
+        expand_unmarked(this, 'RubricCriterion');
+      });
+      jQuery('.mark_grade_input').each(function() {
+        expand_unmarked(this, 'FlexibleCriterion');
+      });
+      jQuery('.mark_grade_input_checkbox_container').each(function() {
+        expand_unmarked(this, 'CheckboxCriterion');
       });
     <% end %>
   });
@@ -83,6 +90,14 @@
 
 <!-- Dialogs -->
 <aside class='dialog' id='notes_dialog'></aside>
+<aside class='dialog' id='download_files_dialog'>
+  <h1><%= 'Download Files' %></h1>
+
+  <%= render partial: 'results/common/download_file_selector',
+             locals: { files: @files,
+                       can_download: true } %>
+
+</aside>
 <% if @current_user.admin? %>
   <aside class='dialog' id='create_new_tag'>
     <%= javascript_include_tag 'Tags/text_updater.js',
@@ -138,8 +153,16 @@
   <h1>
     <%= t('results.title',
           { assignment_name: @assignment.short_identifier,
-            group_name: @grouping.get_group_name }) %>
+            group_name: @current_user.student? ? t('assignment.review') : @grouping.get_group_name }) %>
   </h1>
+
+  <div class='heading_buttons'>
+    <% unless @current_user.is_reviewer_for?(@assignment.pr_assignment, @result) %>
+      <%= link_to t(:download),
+                  'javascript:void(0);',
+                  onclick:'modalDownloadFiles.open();' %>
+    <% end %>
+  </div>
 </div>
 
 <div class='wrapLeft'>
@@ -169,19 +192,6 @@
 
   <%= render partial: 'results/common/errors' %>
 
-  <div id='file_selector'>
-    <%= render partial: 'results/common/file_selector',
-               locals: { files: @files,
-                         can_download: true } %>
-    <% if can_show_feedback_files_tab?(@submission) %>
-      <div id='feedback_files_controls'>
-        <%= render partial: 'results/common/feedback_file_selector',
-                   locals: { feedback_files: @feedback_files,
-                             submission_id: @submission.id } %>
-      </div>
-    <% end %>
-  </div>
-
   <% if !@result.released_to_students %>
     <%= render partial: 'results/marker/marker_panes',
                locals: { extra_marks_points: @extra_marks_points,
@@ -191,10 +201,13 @@
                          result: @result,
                          assignment: @assignment,
                          marks_map: @marks_map,
+                         old_marks_map: @old_marks_map,
                          mark_criteria:@mark_criteria,
                          submission: @submission,
                          old_result: @old_result,
-                         test_results: @test_results } %>
+                         test_results: @test_results,
+                         files: @files,
+                         feedback_files: @feedback_files} %>
   <% else %>
     <%= render partial: 'results/result_summary',
                formats: [:html],

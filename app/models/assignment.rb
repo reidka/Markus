@@ -2,10 +2,8 @@ require 'csv_invalid_line_error'
 
 class Assignment < ActiveRecord::Base
   include RepositoryHelper
-  MARKING_SCHEME_TYPE = {
-    flexible: 'flexible',
-    rubric: 'rubric'
-  }
+
+  MIN_PEER_REVIEWS_PER_GROUP = 1
 
   has_many :rubric_criteria,
            -> { order(:position) },
@@ -17,9 +15,14 @@ class Assignment < ActiveRecord::Base
            class_name: 'FlexibleCriterion',
        dependent: :destroy
 
-  has_many :test_support_files, :dependent => :destroy
+  has_many :checkbox_criteria,
+           -> { order(:position) },
+           class_name: 'CheckboxCriterion',
+       dependent: :destroy
+
+  has_many :test_support_files, dependent: :destroy
   accepts_nested_attributes_for :test_support_files, allow_destroy: true
-  has_many :test_scripts, :dependent => :destroy
+  has_many :test_scripts, dependent: :destroy
   accepts_nested_attributes_for :test_scripts, allow_destroy: true
 
 
@@ -41,6 +44,13 @@ class Assignment < ActiveRecord::Base
   validates_associated :assignment_stat
   # Because of app/views/main/_grade_distribution_graph.html.erb:25
   validates_presence_of :assignment_stat
+
+  # Assignments can now refer to themselves, where this is null if there
+  # is no parent (the same holds for the child peer reviews)
+  belongs_to :parent_assignment, class_name: 'Assignment', inverse_of: :pr_assignment
+  has_one :pr_assignment, class_name: 'Assignment', foreign_key: :parent_assignment_id, inverse_of: :parent_assignment
+  has_many :peer_reviews, through: :groupings
+  has_many :pr_peer_reviews, through: :parent_assignment, source: :peer_reviews
 
   has_many :annotation_categories,
            -> { order(:position) },
@@ -75,7 +85,6 @@ class Assignment < ActiveRecord::Base
   validates_presence_of :description
   validates_presence_of :repository_folder
   validates_presence_of :due_date
-  validates_presence_of :marking_scheme_type
   validates_presence_of :group_min
   validates_presence_of :group_max
   validates_presence_of :notes_count
@@ -86,6 +95,7 @@ class Assignment < ActiveRecord::Base
   validates_inclusion_of :display_grader_names_to_students, in: [true, false]
   validates_inclusion_of :is_hidden, in: [true, false]
   validates_inclusion_of :enable_test, in: [true, false]
+  validates_inclusion_of :has_peer_review, in: [true, false]
   validates_inclusion_of :assign_graders_to_criteria, in: [true, false]
   validates_inclusion_of :unlimited_tokens, in: [true, false]
 
@@ -111,42 +121,10 @@ class Assignment < ActiveRecord::Base
   # Look in lib/validators/* for more info
   validates :due_date, date: true
   after_save :update_assigned_tokens
+  after_save :create_peer_review_assignment_if_not_exist
 
   # Set the default order of assignments: in ascending order of due_date
   default_scope { order('due_date ASC') }
-
-  # Export a YAML formatted string created from the assignment rubric criteria.
-  def export_rubric_criteria_yml
-    criteria = self.rubric_criteria
-    final = ActiveSupport::OrderedHash.new
-    criteria.each do |criterion|
-      inner = ActiveSupport::OrderedHash.new
-      inner['weight'] =  criterion['weight']
-      inner['level_0'] = {
-        'name' =>  criterion['level_0_name'] ,
-        'description' =>  criterion['level_0_description']
-      }
-      inner['level_1'] = {
-        'name' =>  criterion['level_1_name'] ,
-        'description' =>  criterion['level_1_description']
-      }
-      inner['level_2'] = {
-        'name' =>  criterion['level_2_name'] ,
-        'description' =>  criterion['level_2_description']
-      }
-      inner['level_3'] = {
-        'name' =>  criterion['level_3_name'] ,
-        'description' =>  criterion['level_3_description']
-      }
-      inner['level_4'] = {
-        'name' =>  criterion['level_4_name'] ,
-        'description' => criterion['level_4_description']
-      }
-      criteria_yml = { "#{criterion.name}" => inner }
-      final = final.merge(criteria_yml)
-    end
-    final.to_yaml
-  end
 
   def minimum_number_of_groups
     if (group_max && group_min) && group_max < group_min
@@ -256,16 +234,9 @@ class Assignment < ActiveRecord::Base
     short_identifier
   end
 
-  def total_mark
-    total = 0
-    if self.marking_scheme_type == 'rubric'
-      rubric_criteria.each do |criterion|
-        total = total + criterion.weight * 4
-      end
-    else
-      total = flexible_criteria.sum('max')
-    end
-    total.round(2)
+  # Returns the maximum possible mark for a particular assignment
+  def max_mark(user_visibility = :ta)
+    get_criteria(user_visibility).map(&:max_mark).sum.round(2)
   end
 
   # calculates summary statistics of released results for this assignment
@@ -274,17 +245,17 @@ class Assignment < ActiveRecord::Base
     # No marks released for this assignment.
     return false if marks.empty?
 
-    self.results_fails = marks.count { |mark| mark < total_mark / 2.0 }
+    self.results_fails = marks.count { |mark| mark < max_mark / 2.0 }
     self.results_zeros = marks.count(&:zero?)
 
     # Avoid division by 0.
     self.results_average, self.results_median =
-      if total_mark.zero?
+      if max_mark.zero?
         [0, 0]
       else
         # Calculates average and median in percentage.
         [average(marks), median(marks)].map do |stat|
-          (stat * 100 / total_mark).round(2)
+          (stat * 100 / max_mark).round(2)
         end
       end
     self.save
@@ -331,11 +302,6 @@ class Assignment < ActiveRecord::Base
     end
     self.outstanding_remark_request_count = outstanding_count
     self.save
-  end
-
-  def total_criteria_weight
-    factor = 10.0 ** 2
-    (rubric_criteria.sum('weight') * factor).floor / factor
   end
 
   def total_test_script_marks
@@ -612,49 +578,15 @@ class Assignment < ActiveRecord::Base
     end
   end
 
-  # returns an array of [mark, weight] for the assignment's rubric criterion
-  def get_rubric_marks_list(submission)
-    marks_list = []
-    self.rubric_criteria.each do |rubric_criterion|
-      mark = submission.get_latest_result
-        .marks
-        .where(markable_id: rubric_criterion.id,
-               markable_type: 'RubricCriterion')
-        .first
-      marks_list.push([(mark.nil? || mark.mark.nil?) ? '' : mark.mark,
-                       rubric_criterion.weight])
-    end
-    marks_list
-  end
-
-  # returns an array of [mark, max] for the assignment's rubric criterion
-  def get_flexible_marks_list(submission)
-    marks_list = []
-    self.flexible_criteria.each do |flexible_criterion|
-      mark = submission.get_latest_result
-        .marks
-        .where(markable_id: flexible_criterion.id,
-               markable_type: 'FlexibleCriterion')
-        .first
-      marks_list.push([(mark.nil? || mark.mark.nil?) ? '' : mark.mark,
-                       flexible_criterion.max])
-    end
-    marks_list
-  end
-
   # Get a detailed CSV report of criteria based marks
   # (includes each criterion, with it's out-of value) for this assignment.
   # Produces CSV rows such as the following:
   #   student_name,95.22222,3,4,2,5,5,4,0/2
   # Criterion values should be read in pairs. I.e. 2,3 means 2 out-of 3.
   # Last column are grace-credits.
-  # Determines which criterion type to use (flexible vs rubric)
   def get_detailed_csv_report
-    out_of = self.total_mark
+    out_of = max_mark
     students = Student.all
-    # determine whether to use flexible criterion or rubric
-    is_flexible = self.marking_scheme_type == MARKING_SCHEME_TYPE[:flexible]
-    criteria = is_flexible ? self.flexible_criteria : self.rubric_criteria
     MarkusCSV.generate(students) do |student|
       result = [student.user_name]
       grouping = student.accepted_grouping_for(self.id)
@@ -662,8 +594,9 @@ class Assignment < ActiveRecord::Base
         # No grouping/no submission
         # total percentage, total_grade
         result.concat(['','0'])
-        # mark, weight
-        result.concat(criteria.pluck("''", (is_flexible ? :max : :weight)).flatten())
+        # mark, max_mark
+        result.concat(Array.new(criteria_count, '').
+          zip(get_criteria.map(&:max_mark)).flatten)
         # extra-mark, extra-percentage
         result.concat(['',''])
       else
@@ -672,10 +605,7 @@ class Assignment < ActiveRecord::Base
         submission = grouping.current_submission_used
         result.concat([submission.get_latest_result.total_mark / out_of * 100,
                        submission.get_latest_result.total_mark])
-        marks_list = is_flexible ?
-          get_flexible_marks_list(submission) :
-          get_rubric_marks_list(submission)
-        marks_list.each do |mark|
+        get_marks_list(submission).each do |mark|
           result.concat(mark)
         end
         result.concat([submission.get_latest_result.get_total_extra_points,
@@ -685,6 +615,15 @@ class Assignment < ActiveRecord::Base
       grace_credits_data = student.remaining_grace_credits.to_s + '/' + student.grace_credits.to_s
       result.push(grace_credits_data)
       result
+    end
+  end
+
+  # Returns an array of [mark, max_mark].
+  def get_marks_list(submission)
+    get_criteria.map do |criterion|
+      mark = submission.get_latest_result.marks.find_by(markable_id: criterion.id)
+      [(mark.nil? || mark.mark.nil?) ? '' : mark.mark,
+       criterion.max_mark]
     end
   end
 
@@ -701,35 +640,47 @@ class Assignment < ActiveRecord::Base
 
   def next_criterion_position
     # We're using count here because this fires off a DB query, thus
-    # grabbing the most up-to-date count of the rubric criteria.
-    self.rubric_criteria.count + 1
+    # grabbing the most up-to-date count of the criteria.
+    get_criteria.count > 0 ? get_criteria.last.position + 1 : 1
   end
 
-  # Returns the class of the criteria that belong to this assignment.
-  def criterion_class
-    if marking_scheme_type == MARKING_SCHEME_TYPE[:flexible]
-      FlexibleCriterion
-    elsif marking_scheme_type == MARKING_SCHEME_TYPE[:rubric]
-      RubricCriterion
-    else
-      nil
+  # Returns a filtered list of criteria.
+  def get_criteria(user_visibility = :all, type = :all, options = {})
+    include_opt = options[:includes]
+    if user_visibility == :all
+      get_all_criteria(type, include_opt)
+    elsif user_visibility == :ta
+      get_ta_visible_criteria(type, include_opt)
+    elsif user_visibility == :peer
+      get_peer_visible_criteria(type, include_opt)
     end
   end
 
-  def get_criteria
-    if self.marking_scheme_type == 'rubric'
-      self.rubric_criteria
-    else
-      self.flexible_criteria
+  def get_all_criteria(type, include_opt)
+    if type == :all
+      all_criteria = rubric_criteria.includes(include_opt) +
+                     flexible_criteria.includes(include_opt) +
+                     checkbox_criteria.includes(include_opt)
+      all_criteria.sort_by(&:position)
+    elsif type == :rubric
+      rubric_criteria.includes(include_opt).order(:position)
+    elsif type == :flexible
+      flexible_criteria.includes(include_opt).order(:position)
+    elsif type == :checkbox
+      checkbox_criteria.includes(include_opt).order(:position)
     end
+  end
+
+  def get_ta_visible_criteria(type, include_opt)
+    get_all_criteria(type, include_opt).select(&:ta_visible)
+  end
+
+  def get_peer_visible_criteria(type, include_opt)
+    get_all_criteria(type, include_opt).select(&:peer_visible)
   end
 
   def criteria_count
-    if self.marking_scheme_type == 'rubric'
-      self.rubric_criteria.size
-    else
-      self.flexible_criteria.size
-    end
+    get_criteria.size
   end
 
   # Returns an array with the number of groupings who scored between
@@ -737,7 +688,7 @@ class Assignment < ActiveRecord::Base
   # intervals defaults to 20
   def grade_distribution_as_percentage(intervals=20)
     distribution = Array.new(intervals, 0)
-    out_of = self.total_mark
+    out_of = max_mark
 
     if out_of == 0
       return distribution
@@ -802,7 +753,7 @@ class Assignment < ActiveRecord::Base
       groupings.count(marking_completed: true)
     else
       n = 0
-      ta_memberships.where(user_id: ta_id).find_each do |x|
+      ta_memberships.includes(grouping: [{current_submission_used: [:submitted_remark, :results]}]).where(user_id: ta_id).find_each do |x|
         x.grouping.marking_completed? && n += 1
       end
       n
@@ -850,13 +801,7 @@ class Assignment < ActiveRecord::Base
   # Assign graders to a criterion for this assignment.
   # Raise a CSVInvalidLineError if the criterion or a grader doesn't exist.
   def add_graders_to_criterion(criterion_name, graders)
-    if marking_scheme_type == 'rubric'
-      criterion = rubric_criteria.find_by(
-        name: criterion_name)
-    else
-      criterion = flexible_criteria.find_by(
-        name: criterion_name)
-    end
+    criterion = get_criteria.find{ |crit| crit.name == criterion_name }
 
     if criterion.nil?
       raise CSVInvalidLineError
@@ -878,7 +823,7 @@ class Assignment < ActiveRecord::Base
     end
   end
 
-  def can_uncollect_submissions?
+  def has_a_collected_submission?
     submissions.where(submission_version_used: true).count > 0
   end
   # Returns the groupings of this assignment that have no associated section
@@ -896,6 +841,41 @@ class Assignment < ActiveRecord::Base
     false
   end
 
+  # Returns true if this is a peer review, meaning it has a parent assignment,
+  # false otherwise.
+  def is_peer_review?
+    not parent_assignment_id.nil?
+  end
+
+  # Returns true if this is a parent assignment that has a child peer review
+  # assignment.
+  def has_peer_review_assignment?
+    not pr_assignment.nil?
+  end
+
+  def create_peer_review_assignment_if_not_exist
+    if has_peer_review and Assignment.where(parent_assignment_id: id).empty?
+      peerreview_assignment = Assignment.new
+      peerreview_assignment.parent_assignment = self
+      peerreview_assignment.submission_rule = NoLateSubmissionRule.new
+      peerreview_assignment.assignment_stat = AssignmentStat.new
+      peerreview_assignment.token_period = 1
+      peerreview_assignment.unlimited_tokens = false
+      peerreview_assignment.short_identifier = short_identifier + '_pr'
+      peerreview_assignment.description = description
+      peerreview_assignment.repository_folder = repository_folder
+      peerreview_assignment.due_date = due_date
+      peerreview_assignment.is_hidden = true
+
+      # We do not want to have the database in an inconsistent state, so we
+      # need to have the database rollback the 'has_peer_review' column to
+      # be false
+      if not peerreview_assignment.save
+        raise ActiveRecord::Rollback
+      end
+    end
+  end
+
   ### REPO ###
 
   def repository_name
@@ -908,8 +888,7 @@ class Assignment < ActiveRecord::Base
     # only create if we can add starter code
     return true unless can_upload_starter_code?
     begin
-      Repository.get_class(MarkusConfigurator.markus_config_repository_type,
-                           repository_config)
+      Repository.get_class(MarkusConfigurator.markus_config_repository_type)
                 .create(File.join(MarkusConfigurator.markus_config_repository_storage,
                                   repository_name))
     rescue Repository::RepositoryCollision => e
@@ -923,19 +902,11 @@ class Assignment < ActiveRecord::Base
     true
   end
 
-  def repository_config
-    conf = Hash.new
-    conf['IS_REPOSITORY_ADMIN'] = MarkusConfigurator.markus_config_repository_admin?
-    conf['REPOSITORY_PERMISSION_FILE'] = MarkusConfigurator.markus_config_repository_permission_file
-    conf['REPOSITORY_STORAGE'] = MarkusConfigurator.markus_config_repository_storage
-    conf
-  end
-
   # Return a repository object, if possible
   def repo
     repo_loc = File.join(MarkusConfigurator.markus_config_repository_storage, repository_name)
-    if Repository.get_class(MarkusConfigurator.markus_config_repository_type, repository_config).repository_exists?(repo_loc)
-      Repository.get_class(MarkusConfigurator.markus_config_repository_type, repository_config).open(repo_loc)
+    if Repository.get_class(MarkusConfigurator.markus_config_repository_type).repository_exists?(repo_loc)
+      Repository.get_class(MarkusConfigurator.markus_config_repository_type).open(repo_loc)
     else
       raise 'Repository not found and MarkUs not in authoritative mode!' # repository not found, and we are not repo-admin
     end

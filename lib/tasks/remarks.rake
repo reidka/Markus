@@ -3,15 +3,6 @@ namespace :db do
   task :remarks => :environment do
     puts 'Create remark requests'
 
-    #Function used to create marks for both criterias
-    def create_mark(result_id, markable_type, markable)
-      Mark.create(
-        result_id: result_id,
-        mark: rand(0..4),
-        markable_type: markable_type,
-        markable: markable)
-    end
-
     # Create remark requests for assignments that allow them
     Assignment.where(allow_remarks: true).each do |assignment|
       # Create remark request for first two groups in each assignment
@@ -45,26 +36,20 @@ namespace :db do
     remark_group = Grouping.find_by_group_id(remark_submission.grouping_id)
     result = remark_submission.results.first
 
-    #Automate remarks for assignment using flexible criteria
-    if remark_group.assignment.marking_scheme_type == Assignment::MARKING_SCHEME_TYPE[:flexible]
-      remark_group.assignment.flexible_criteria.each do |flexible|
-        mark = create_mark(remark_submission.remark_result.id,
-                            remark_group.assignment.marking_scheme_type,
-                            flexible)
-        result.marks.push(mark)
-        result.save
+    #Automate remarks for assignment using appropriate criteria
+    remark_group.assignment.get_criteria(:all, :all, includes: :marks).each do |criterion|
+      if criterion.class == RubricCriterion
+        random_mark = criterion.max_mark / 4 * rand(0..4)
+      elsif criterion.class == FlexibleCriterion
+        random_mark = rand(0..criterion.max_mark.to_i)
+      else
+        random_mark = rand(0..1)
       end
-    end
-
-    #Automate remarks for assignment using rubric criteria
-    if remark_group.assignment.marking_scheme_type == Assignment::MARKING_SCHEME_TYPE[:rubric]
-      remark_group.assignment.rubric_criteria.each do |rubric|
-        mark = create_mark(remark_submission.remark_result.id,
-                            remark_group.assignment.marking_scheme_type,
-                            rubric)
-        result.marks.push(mark)
-        result.save
-      end
+      mark = Mark.find_by(result_id:     remark_submission.remark_result.id,
+                          markable_id:   criterion.id,
+                          markable_type: criterion.class.to_s)
+      mark.update_attribute(:mark, random_mark)
+      result.save
     end
 
     remark_submission.remark_result.update_attributes(
